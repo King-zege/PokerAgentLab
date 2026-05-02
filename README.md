@@ -1,12 +1,15 @@
 # PokerAgentLab
 
-PokerAgentLab is a multi-agent Texas Hold'em training and evaluation platform built for agent engineering portfolios. It combines a Python poker engine, FastAPI session control, LLM-compatible tool calling, decision tracing, self-play reports, and a lightweight React demo.
+[中文 README](README.zh-CN.md)
+
+PokerAgentLab is a multi-agent Texas Hold'em training and evaluation platform. It combines a Python poker engine, FastAPI session control, LLM-compatible tool calling, decision tracing, self-play reports, local memory/RAG, and a lightweight React.
 
 ## Why This Project Matters
 
 - **Multi-agent runtime**: human, rule-based, style-based, and LLM-backed poker agents share one game engine.
 - **Tool-calling decision loop**: LLM agents are prompted with legal actions and parsed into structured poker actions.
 - **Observability-first design**: every decision can be traced with observation, legal actions, chosen action, prompt summary, raw response, fallback reason, and latency.
+- **Hermes-inspired memory lifecycle**: local short-term hand memory, long-term user profile candidates, strategy retrieval, and coach-confirmed memory promotion.
 - **Self-play evaluation**: batch experiments report win rate, BB/100, VPIP, PFR, aggression factor, and action distribution.
 - **Coach agent**: completed sessions can be reviewed into key findings and training goals.
 
@@ -20,7 +23,11 @@ flowchart LR
   Engine --> Agents["Human / Rule / Style / LLM Agents"]
   Agents --> Trace["DecisionTrace JSONL"]
   Engine --> History["HandHistory JSONL"]
+  Agents --> Memory["PokerMemoryManager"]
+  Memory --> Profile["LongTermUserProfile"]
+  Memory --> Strategy["StrategyRAG"]
   History --> Coach["Analysis + Coach Agent"]
+  Coach --> Consolidator["MemoryConsolidator"]
   History --> Experiments["Self-play Reports"]
 ```
 
@@ -65,6 +72,10 @@ POKER_LLM_ENABLED=false
 POKER_LLM_API_KEY=
 POKER_LLM_API_BASE=https://open.bigmodel.cn/api/paas/v4
 POKER_LLM_MODEL=glm-4-flash
+POKER_MEMORY_ENABLED=true
+POKER_MEMORY_USER_ID=default_user
+POKER_MEMORY_MAX_RECENT_HANDS=5
+POKER_STRATEGY_RAG_ENABLED=true
 ```
 
 When `POKER_LLM_ENABLED=false` or no key is provided, `style: llm` players automatically fall back to a rule agent so demos and tests still run.
@@ -93,6 +104,14 @@ GET  /sessions/{session_id}/hands/{hand_id}/traces
 GET  /sessions/{session_id}/history
 POST /sessions/{session_id}/analyze
 POST /sessions/{session_id}/coach
+POST /sessions/{session_id}/consolidate
+GET  /sessions/{session_id}/memory-context
+GET  /memory/profile
+GET  /memory/profile/candidates
+POST /memory/profile/candidates/{memory_id}/accept
+POST /memory/profile/candidates/{memory_id}/reject
+POST /memory/search
+POST /strategy/search
 ```
 
 Self-play:
@@ -117,7 +136,7 @@ agent/       Agent interfaces and implementations
 analysis/    Style review and coach feedback
 api/         FastAPI models, sessions, runners, experiments
 engine/      Poker rules, betting, pots, showdown
-memory/      Hand history, decision logs, decision traces
+memory/      Hand history, traces, user profile memory, StrategyRAG, consolidation
 strategy/    Style profiles and poker heuristics
 frontend/    Lightweight React demo
 tests/       Minimal smoke tests
@@ -136,6 +155,7 @@ Current smoke coverage:
 - Non-interactive sessions generate hand history and traces.
 - API sessions reach `waiting_for_action` and accept legal actions.
 - LLM action parsing handles invalid and valid structured actions.
+- Memory profile candidate accept/search, strategy retrieval, and consolidation basics.
 
 ## Docker
 
@@ -151,5 +171,6 @@ Frontend: `http://127.0.0.1:5173`
 - Designed an agent runtime where model outputs are constrained by legal actions.
 - Added graceful LLM fallback so the product remains demoable without API keys.
 - Built JSONL traces for debugging agent behavior across hands and sessions.
+- Added a local memory lifecycle inspired by Hermes-style provider orchestration without copying external code.
 - Added self-play reports to compare agent styles with poker-specific metrics.
 - Separated game engine, API orchestration, memory, analysis, and UI surfaces.

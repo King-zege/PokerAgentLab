@@ -51,6 +51,12 @@ class QueueHumanAgent(BaseAgent):
         self._current_legal_actions = legal_actions
         self._start_time = time.time()
 
+    def clear_state(self):
+        """Clear exposed action state after an action has been consumed."""
+        self._current_observation = None
+        self._current_legal_actions = []
+        self._start_time = None
+
     @property
     def waiting_for_action(self) -> bool:
         """Return True if agent is waiting for action from queue."""
@@ -114,7 +120,9 @@ class QueueHumanAgent(BaseAgent):
             # Try to get action with short timeout
             try:
                 action_data = self._queue.get(timeout=self._poll_interval)
-                return self._parse_action(action_data, legal_actions)
+                action = self._parse_action(action_data, legal_actions)
+                self.clear_state()
+                return action
             except queue.Empty:
                 # Short timeout - loop back and check stop/timeout conditions
                 continue

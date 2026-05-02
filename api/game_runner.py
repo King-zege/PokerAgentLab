@@ -154,6 +154,9 @@ class GameRunner:
         """Tell the game to continue to the next hand - goes to control queue."""
         self.state.hand_complete = False
         self.state.status = "running"
+        human_agent = self.game.agent_map.get(self.human_id)
+        if human_agent and hasattr(human_agent, "clear_state"):
+            human_agent.clear_state()
         session_store.update_progress(self.session_id, status="running")
         self.control_queue.put({"type": "continue"})
 
@@ -173,8 +176,12 @@ class GameRunner:
             if hasattr(human_agent, 'waiting_for_action'):
                 self.state.waiting_on_human = human_agent.waiting_for_action
                 # Update status if human is waiting during a hand
-                if human_agent.waiting_for_action and self.state.status == "running":
+                if human_agent.waiting_for_action and self.state.status == "running" and not self.state.hand_complete:
                     self.state.status = "waiting_for_action"
+
+        if self.state.hand_complete:
+            human_state = {}
+            self.state.waiting_on_human = False
 
         return {
             "session_id": self.session_id,

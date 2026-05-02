@@ -87,6 +87,69 @@ h2 {
   gap: 8px;
 }
 
+.traceChips {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.traceChips span {
+  border: 1px solid #334155;
+  border-radius: 6px;
+  color: #cbd5e1;
+  font-size: 12px;
+  padding: 4px 8px;
+}
+
+.traceList {
+  display: grid;
+  gap: 8px;
+}
+
+.traceItem {
+  border: 1px solid rgba(212, 177, 95, 0.24);
+  border-radius: 6px;
+  background: rgba(12, 20, 18, 0.72);
+  color: #f5e6bd;
+  font-size: 14px;
+  line-height: 1.45;
+  padding: 9px 10px;
+}
+
+.memoryItem {
+  border-top: 1px solid #1f2937;
+  padding: 10px 0;
+}
+
+.memoryItem p {
+  color: #cbd5e1;
+  margin: 6px 0;
+}
+
+.amountControls {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.amountControls label {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 56px minmax(92px, 1fr) 86px;
+}
+
+.amountControls span,
+.amountControls small {
+  color: #aec0ba;
+  font-size: 13px;
+}
+
+.amountControls input {
+  min-width: 0;
+  width: 100%;
+}
+
 .grid {
   display: grid;
   grid-template-columns: minmax(0, 1.6fr) minmax(280px, 0.8fr);

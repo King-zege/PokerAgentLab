@@ -54,6 +54,67 @@ def test_api_session_reaches_waiting_state_and_accepts_action():
     assert action_response.status_code == 200
 
 
+def test_api_continue_advances_to_next_hand_and_clears_completed_actions():
+    client = TestClient(main_api.app)
+    session_id = f"pytest_continue_{int(time.time() * 1000)}"
+
+    response = client.post(
+        "/sessions",
+        json={
+            "session_id": session_id,
+            "mode": "fixed",
+            "num_hands": 2,
+            "config_path": "config/game_config.yaml",
+        },
+    )
+    assert response.status_code == 200
+
+    state = {}
+    for _ in range(30):
+        state = client.get(f"/sessions/{session_id}/state").json()
+        if state["status"] == "waiting_for_action" and state["legal_actions"]:
+            break
+        time.sleep(0.1)
+
+    fold = next(a for a in state["legal_actions"] if a["type"] == "fold")
+    action_response = client.post(
+        f"/sessions/{session_id}/action",
+        json={"action": fold["type"], "amount": 0},
+    )
+    assert action_response.status_code == 200
+
+    completed = {}
+    for _ in range(30):
+        completed = client.get(f"/sessions/{session_id}/state").json()
+        if completed["hand_complete"]:
+            break
+        time.sleep(0.1)
+
+    assert completed["hand_complete"] is True
+    assert completed["can_continue"] is True
+    assert completed["legal_actions"] == []
+
+    continue_response = client.post(
+        f"/sessions/{session_id}/continue",
+        json={"continue_game": True},
+    )
+    assert continue_response.status_code == 200
+
+    next_state = {}
+    for _ in range(30):
+        next_state = client.get(f"/sessions/{session_id}/state").json()
+        if next_state["current_hand"] == 2 and (next_state["status"] == "waiting_for_action" or next_state["hand_complete"]):
+            break
+        time.sleep(0.1)
+
+    assert next_state["current_hand"] == 2
+    if next_state["hand_complete"]:
+        assert next_state["legal_actions"] == []
+        assert next_state["can_continue"] is True
+    else:
+        assert next_state["legal_actions"]
+
+
 def test_llm_action_parser_falls_back_to_legal_action():
     agent = LLMAgent("Tester")
     legal = [Action(ActionType.FOLD), Action(ActionType.CALL)]

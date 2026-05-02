@@ -591,3 +591,77 @@ def coach_session(session_id: str):
         training_goals=result["training_goals"],
         hand_reviews=result["hand_reviews"],
     )
+
+
+@app.get("/memory/profile", response_model=MemoryProfileResponse, tags=["Memory"])
+def get_memory_profile():
+    """Return the local long-term user profile."""
+    return MemoryProfileResponse(**LongTermUserProfile().profile_summary())
+
+
+@app.get("/memory/profile/candidates", response_model=MemorySearchResponse, tags=["Memory"])
+def get_memory_candidates():
+    """Return candidate memories waiting for user confirmation."""
+    memories = [m.to_dict() for m in LongTermUserProfile().list_memories(status="candidate")]
+    return MemorySearchResponse(query="status:candidate", total=len(memories), memories=memories)
+
+
+@app.post("/memory/profile/candidates/{memory_id}/accept", tags=["Memory"])
+def accept_memory_candidate(memory_id: str):
+    """Promote a candidate memory into accepted long-term profile memory."""
+    memory = LongTermUserProfile().set_status(memory_id, "accepted")
+    if memory is None:
+        raise HTTPException(status_code=404, detail=f"Memory '{memory_id}' not found")
+    return {"success": True, "memory": memory.to_dict()}
+
+
+@app.post("/memory/profile/candidates/{memory_id}/reject", tags=["Memory"])
+def reject_memory_candidate(memory_id: str):
+    """Reject a candidate memory so it will not enter decision prompts."""
+    memory = LongTermUserProfile().set_status(memory_id, "rejected")
+    if memory is None:
+        raise HTTPException(status_code=404, detail=f"Memory '{memory_id}' not found")
+    return {"success": True, "memory": memory.to_dict()}
+
+
+@app.post("/memory/search", response_model=MemorySearchResponse, tags=["Memory"])
+def search_memory(req: MemorySearchRequest):
+    """Search long-term user profile memory."""
+    memories = LongTermUserProfile().search(req.query, status=req.status, limit=req.limit)
+    return MemorySearchResponse(query=req.query, total=len(memories), memories=memories)
+
+
+@app.post("/strategy/search", response_model=StrategySearchResponse, tags=["Strategy"])
+def search_strategy(req: StrategySearchRequest):
+    """Search local strategy chunks with source and chunk ids."""
+    chunks = StrategyRAG().search(query=req.query, street=req.street, style=req.style, limit=req.limit)
+    return StrategySearchResponse(query=req.query, total=len(chunks), chunks=chunks)
+
+
+@app.post("/sessions/{session_id}/consolidate", response_model=ConsolidateResponse, tags=["Memory"])
+def consolidate_session_memory(session_id: str):
+    """Generate candidate long-term memories and a session training plan."""
+    session = session_store.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+
+    history_store = HistoryStore(f"data/history/hand_history_{session_id}.jsonl")
+    histories = history_store.load_all()
+    styles_dir = Path(DEFAULT_CONFIG_PATH).parent / "styles"
+    registry = StyleRegistry(str(styles_dir))
+    coach = CoachAgent(AnalysisAgent(registry))
+    focus_player = _find_human_id(session.game)
+    coach_result = coach.review_session(histories, focus_player_id=focus_player)
+    result = MemoryConsolidator().consolidate_session(session_id, histories, coach_result, focus_player_id=focus_player)
+    return ConsolidateResponse(**result)
+
+
+@app.get("/sessions/{session_id}/memory-context", response_model=MemoryContextResponse, tags=["Memory"])
+def get_session_memory_context(session_id: str):
+    """Return the memory/RAG context snapshot used for decision debugging."""
+    session = session_store.get(session_id)
+    if session and hasattr(session.game, "memory_manager"):
+        snapshot = session.game.memory_manager.memory_context_snapshot()
+    else:
+        snapshot = PokerMemoryManager(session_id=session_id).memory_context_snapshot()
+    return MemoryContextResponse(**snapshot)
