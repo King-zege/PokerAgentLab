@@ -1,0 +1,13 @@
+venv/
+__pycache__/
+*.pyc
+.git/
+.idea/
+.env
+frontend/node_modules/
+frontend/dist/
+data/history/
+data/traces/
+data/reports/
+decision_log*.txt
+hand_history*.jsonl
