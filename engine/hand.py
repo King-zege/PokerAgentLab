@@ -8,6 +8,7 @@ from engine.pot import Pot, PotManager, PotWinner
 from engine.betting import BettingRound
 from engine.hand_evaluator import HandEvaluator
 from agent.base_agent import BaseAgent
+from memory.decision_trace import DecisionTraceStore
 
 
 def _get_position_name(seat_index: int, button_index: int, num_players: int) -> str:
@@ -97,8 +98,12 @@ class Hand:
         big_blind_bb: float,
         hand_id: str,
         deck_seed: int | None = None,
+        session_id: str = "",
+        trace_store: DecisionTraceStore | None = None,
     ):
         self.hand_id = hand_id
+        self.session_id = session_id
+        self.trace_store = trace_store
         self.small_blind_bb = small_blind_bb
         self.big_blind_bb = big_blind_bb
         self.button_index = button_index
@@ -306,6 +311,9 @@ class Hand:
             button_index=self.button_index,
             community_cards=self.community_cards,
             num_players=self.num_players,
+            hand_id=self.hand_id,
+            session_id=self.session_id,
+            trace_store=self.trace_store,
         )
 
         records = betting_round.run(agent_map)

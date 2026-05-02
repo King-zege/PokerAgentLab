@@ -7,10 +7,13 @@ from agent.base_agent import BaseAgent
 from agent.style_agent import StyleAgent
 from agent.human_agent import HumanAgent
 from agent.llm_agent import LLMAgent
+from agent.rule_agent import RuleAgent
 from strategy.style_profile import StyleRegistry
 from memory.decision_logger import DecisionLogger
 from memory.history_store import HistoryStore
 from memory.hand_history import HandHistory
+from memory.decision_trace import DecisionTraceStore
+from memory.poker_memory_manager import PokerMemoryManager
 
 
 class Game:
@@ -39,9 +42,10 @@ class Game:
             })
 
         # Create agent map
+        self.memory_manager = PokerMemoryManager(session_id=session_id or "default")
         self.agent_map: dict[str, BaseAgent] = {}
         self.human_id = None
-        llm_config = self.config.get("llm", {})
+        llm_config = self._resolve_llm_config(self.config.get("llm", {}))
 
         for p in self.players:
             style_profile = None
@@ -55,20 +59,22 @@ class Game:
                 self.agent_map[p["id"]] = HumanAgent(p["id"], p["style"])
                 self.human_id = p["id"]
             elif p["style"] == "llm":
-                # Calculate skills_dir: project_root/strategy/skills
-                import os
-                # config/game_config.yaml -> project_root (two levels up from config)
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
-                skills_dir = os.path.join(project_root, "strategy", "skills")
-                self.agent_map[p["id"]] = LLMAgent(
-                    player_id=p["id"],
-                    api_key=llm_config.get("api_key"),
-                    api_base=llm_config.get("api_base", "https://api.openai.com/v1"),
-                    model=llm_config.get("model", "gpt-4o-mini"),
-                    style=p.get("llm_style", "balanced"),
-                    skills_dir=skills_dir,
-                    use_skills_in_prompt=llm_config.get("use_skills_in_prompt", True),
-                )
+                if not llm_config.get("enabled") or not llm_config.get("api_key"):
+                    self.agent_map[p["id"]] = RuleAgent(p["id"], style="llm-disabled")
+                else:
+                    import os
+                    project_root = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
+                    skills_dir = os.path.join(project_root, "strategy", "skills")
+                    self.agent_map[p["id"]] = LLMAgent(
+                        player_id=p["id"],
+                        api_key=llm_config.get("api_key"),
+                        api_base=llm_config.get("api_base", "https://api.openai.com/v1"),
+                        model=llm_config.get("model", "gpt-4o-mini"),
+                        style=p.get("llm_style", "balanced"),
+                        skills_dir=skills_dir,
+                        use_skills_in_prompt=llm_config.get("use_skills_in_prompt", True),
+                        memory_manager=self.memory_manager,
+                    )
             else:
                 self.agent_map[p["id"]] = StyleAgent(p["id"], style_profile)
 
@@ -79,15 +85,37 @@ class Game:
 
         if session_id:
             # Generate session-specific filenames
-            history_path = self._generate_session_filename(base_history, session_id)
-            log_path = self._generate_session_filename(base_log, session_id)
+            history_path = f"data/history/{self._generate_session_filename(base_history, session_id)}"
+            log_path = f"data/history/{self._generate_session_filename(base_log, session_id)}"
         else:
             history_path = base_history
             log_path = base_log
 
         self.history_store = HistoryStore(history_path)
         self.decision_logger = DecisionLogger(log_path)
+        self.trace_store = DecisionTraceStore.for_session(session_id or "default")
         self.table_size = self.config.get("table", {}).get("size", 6)
+
+    def _resolve_llm_config(self, llm_config: dict) -> dict:
+        """Merge YAML LLM settings with environment variables."""
+        import os
+        try:
+            from dotenv import load_dotenv
+            load_dotenv()
+        except Exception:
+            pass
+
+        resolved = dict(llm_config or {})
+        enabled_env = os.environ.get("POKER_LLM_ENABLED")
+        if enabled_env is not None:
+            resolved["enabled"] = enabled_env.strip().lower() in ("1", "true", "yes", "on")
+        else:
+            resolved["enabled"] = bool(resolved.get("enabled", False))
+
+        resolved["api_key"] = os.environ.get("POKER_LLM_API_KEY", resolved.get("api_key", ""))
+        resolved["api_base"] = os.environ.get("POKER_LLM_API_BASE", resolved.get("api_base", "https://api.openai.com/v1"))
+        resolved["model"] = os.environ.get("POKER_LLM_MODEL", resolved.get("model", "gpt-4o-mini"))
+        return resolved
 
     def _generate_session_filename(self, base: str, session_id: str) -> str:
         """Generate session-specific filename by inserting session_id before extension."""
@@ -117,6 +145,8 @@ class Game:
             big_blind_bb=self.config["table"]["big_blind_bb"],
             hand_id=hand_id,
             deck_seed=seed,
+            session_id=self.session_id or "default",
+            trace_store=self.trace_store,
         )
 
         result = hand.play(self.agent_map)
@@ -137,6 +167,8 @@ class Game:
         """Play multiple hands. Prompts between hands to continue or quit."""
         if num_hands is None:
             num_hands = self.config.get("session", {}).get("num_hands", 10)
+        if not interactive and self.human_id and isinstance(self.agent_map.get(self.human_id), HumanAgent):
+            self.agent_map[self.human_id] = RuleAgent(self.human_id, style="human-auto")
 
         hands_played = 0
 
@@ -157,7 +189,12 @@ class Game:
             self._save_hand_history(result)
             hands_played += 1
 
-            # Ask user if they want to continue (ALWAYS ask, regardless of mode)
+            if not interactive:
+                if num_hands is not None and hands_played >= num_hands:
+                    break
+                continue
+
+            # Ask user if they want to continue in interactive mode
             print(f"\n{'='*40}")
             print(f"已玩 {hands_played} 手牌")
             print(f"当前筹码: ", end="")

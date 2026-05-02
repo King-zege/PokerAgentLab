@@ -118,6 +118,7 @@ class HandHistory:
 
         # Convert actions
         actions = []
+        style_by_player = {p.get("id"): p.get("style", "") for p in players}
         for record in result.actions:
             action_amount = 0.0
             action_obj = record.get("action_obj")
@@ -131,9 +132,10 @@ class HandHistory:
                 action=record["action"],
                 action_amount=action_amount,
                 stack_before_bb=record["stack_before_bb"],
-                pot_before_bb=record["pot_after_bb"],
+                pot_before_bb=record.get("pot_before_bb", record.get("pot_after_bb", 0.0)),
                 explanation=record.get("explanation", ""),
                 position_name=record.get("position_name", ""),
+                style=style_by_player.get(record["player_id"], ""),
             ))
 
         # Convert pots

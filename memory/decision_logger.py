@@ -9,6 +9,7 @@ class DecisionLogger:
 
     def __init__(self, filepath: str = "decision_log.txt"):
         self.filepath = Path(filepath)
+        self.filepath.parent.mkdir(parents=True, exist_ok=True)
         self._file = None
         self._write_header()
 

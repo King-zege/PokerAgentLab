@@ -45,15 +45,18 @@ class LLMAgent(BaseAgent):
         style: str = "balanced",
         skills_dir: str = "strategy/skills",
         use_skills_in_prompt: bool = True,
+        memory_manager=None,
     ):
         self.player_id = player_id
         self.style = style
-        self.api_key = api_key or os.environ.get("ANTHROPIC_API_KEY", "")
+        self.api_key = api_key or os.environ.get("POKER_LLM_API_KEY", "")
         self.api_base = api_base.rstrip("/")
         self.model = model
         self.skills_dir = skills_dir
         self.use_skills_in_prompt = use_skills_in_prompt
+        self.memory_manager = memory_manager
         self._call_count = 0  # Debug counter
+        self.last_trace: dict = {}
 
     def decide(self, observation: Observation, legal_actions: list[Action]) -> Action:
         """Use LLM to decide which action to take."""
@@ -62,19 +65,34 @@ class LLMAgent(BaseAgent):
         start_time = time.time()
 
         prompt = self._build_prompt(observation, legal_actions)
+        self.last_trace = {
+            "prompt_summary": prompt[:1200],
+            "fallback_reason": "",
+        }
 
         try:
             response, num_calls = self._call_llm_with_count(prompt)
             elapsed = time.time() - start_time
-            print(f"  👨 {self.player_id} 思考{elapsed:.1f}s后行动：", end=" ", flush=True)
+            print(f"  AI {self.player_id} 思考{elapsed:.1f}s后行动：", end=" ", flush=True)
             action = self._parse_action(response, legal_actions, observation)
+            self.last_trace.update({
+                "llm_raw_response": response,
+                "parsed_action": str(action) if action is not None else "",
+                "latency_ms": elapsed * 1000,
+            })
             if action is not None and action in legal_actions:
                 return action
+            self.last_trace["fallback_reason"] = "Parsed action was missing or not exactly legal"
         except Exception as e:
             print(f"\n  [LLM Error #{self._call_count}] {e}")
+            self.last_trace.update({
+                "llm_raw_response": "",
+                "fallback_reason": str(e),
+                "latency_ms": (time.time() - start_time) * 1000,
+            })
 
         # Fallback to first legal action
-        print(f"  👨 {self.player_id} 思考{time.time()-start_time:.1f}s后行动：", end=" ", flush=True)
+        print(f"  AI {self.player_id} 思考{time.time()-start_time:.1f}s后行动：", end=" ", flush=True)
         return legal_actions[0]
 
     def explain(self, observation: Observation, chosen_action: Action) -> str:
@@ -107,6 +125,17 @@ class LLMAgent(BaseAgent):
 手牌{hole_cards} 公共{community} 池{obs.pot_bb:.1f}BB 跟注{obs.current_bet_to_call_bb:.1f}BB 筹码{obs.stack_bb:.1f}BB
 可选动作: {actions_str}
 直接返回: {{"a":"1"}} 或 {{"a":"fold"}}"""
+
+        if self.memory_manager is not None:
+            memory_context = self.memory_manager.build_decision_context(obs, legal_actions)
+            self.last_trace.update({
+                "memory_context_summary": memory_context.memory_context_summary,
+                "strategy_context_summary": memory_context.strategy_context_summary,
+                "retrieved_memory_ids": memory_context.retrieved_memory_ids,
+                "retrieved_strategy_chunk_ids": memory_context.retrieved_strategy_chunk_ids,
+                "memory_fallback_reason": memory_context.memory_fallback_reason,
+            })
+            return base_prompt + "\n\n" + memory_context.prompt_block
 
         # Inject street-specific skills content if enabled
         if self.use_skills_in_prompt:

@@ -11,6 +11,7 @@ class HistoryStore:
 
     def __init__(self, filepath: str = "hand_history.jsonl"):
         self.filepath = Path(filepath)
+        self.filepath.parent.mkdir(parents=True, exist_ok=True)
 
     def save(self, history: HandHistory) -> None:
         """Append hand history to JSONL file."""

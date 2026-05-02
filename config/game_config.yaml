@@ -1,31 +1,15 @@
 table:
-  size: 6
+  size: 2
   small_blind_bb: 0.5
   big_blind_bb: 1.0
 
 players:
-  - id: "Alice"
-    style: "llm"
-    llm_style: "balanced"
-    stack_bb: 100
   - id: "Human"
     style: "human"
     stack_bb: 100
-  - id: "Carol"
-    style: "llm"
-    llm_style: "tight"
-    stack_bb: 50
-  - id: "Dave"
+  - id: "Alice"
     style: "llm"
     llm_style: "balanced"
-    stack_bb: 120
-  - id: "Eve"
-    style: "llm"
-    llm_style: "nit"
-    stack_bb: 100
-  - id: "Frank"
-    style: "llm"
-    llm_style: "tag"
     stack_bb: 100
 
 session:
@@ -36,9 +20,11 @@ session:
   show_hole_cards: false
 
 # LLM Configuration
-# BigModel Anthropic-compatible API
+# Values can be overridden with environment variables:
+# POKER_LLM_API_KEY, POKER_LLM_API_BASE, POKER_LLM_MODEL, POKER_LLM_ENABLED
 llm:
   api_key: ""
   api_base: "https://open.bigmodel.cn/api/paas/v4"
   model: "glm-4-flash"
+  enabled: false
   use_skills_in_prompt: true

@@ -1,9 +1,12 @@
 """Betting round management: legal actions, completion detection."""
 
+import time
+
 from engine.action import Action, ActionType
 from agent.observation import Observation
 from agent.legal_action_filter import compute_legal_actions
 from agent.base_agent import BaseAgent
+from memory.decision_trace import DecisionTrace, DecisionTraceStore
 
 
 def _build_observation(
@@ -47,6 +50,9 @@ class BettingRound:
         button_index: int,
         community_cards: list,
         num_players: int,
+        hand_id: str = "",
+        session_id: str = "",
+        trace_store: DecisionTraceStore | None = None,
     ):
         self.seats = seats
         self.action_order = action_order
@@ -57,6 +63,9 @@ class BettingRound:
         self._button_index = button_index
         self._community_cards = community_cards
         self._num_players = num_players
+        self._hand_id = hand_id
+        self._session_id = session_id or "default"
+        self._trace_store = trace_store
 
         self._last_raise_increment = current_bet_bb if street == "preflop" and current_bet_bb > 0 else big_blind_bb
         self._acted_this_round: set[int] = set()
@@ -154,6 +163,9 @@ class BettingRound:
                 if not legal:
                     continue
 
+                latency_ms = 0.0
+                fallback_reason = ""
+
                 # If only one legal action (e.g., check), auto-apply
                 if len(legal) == 1:
                     action = legal[0]
@@ -163,11 +175,14 @@ class BettingRound:
                     if agent is None:
                         action = legal[0]  # Fallback to first legal action
                     else:
+                        start = time.perf_counter()
                         action = agent.decide(obs, legal)
+                        latency_ms = (time.perf_counter() - start) * 1000
 
                     # Validate action is legal (check type only, not exact amount)
                     legal_types = {a.type for a in legal}
                     if action.type not in legal_types:
+                        fallback_reason = f"Illegal action type {action.type.value}; fell back to first legal action"
                         # Find fallback action of same type or first legal
                         for la in legal:
                             if la.type == action.type:
@@ -184,6 +199,7 @@ class BettingRound:
                     explanation = agent.explain(obs, action)
 
                 # Apply the action
+                pot_before_bb = self._pot_bb
                 self._apply_action(seat_index, action)
 
                 # Record
@@ -196,6 +212,7 @@ class BettingRound:
                     "action_obj": action,
                     "stack_before_bb": stack_after + (action.amount if action.type in (ActionType.BET, ActionType.RAISE, ActionType.ALL_IN) else 0),
                     "stack_after_bb": stack_after,
+                    "pot_before_bb": pot_before_bb,
                     "pot_after_bb": self._pot_bb,
                     "explanation": explanation,
                     "position_name": seat["position_name"],
@@ -203,6 +220,16 @@ class BettingRound:
 
                 # Print action immediately for real-time display
                 self._print_action(seat, action, stack_after)
+
+                if agent is not None:
+                    self._save_decision_trace(
+                        obs=obs,
+                        legal_actions=legal,
+                        chosen_action=action,
+                        agent=agent,
+                        latency_ms=latency_ms,
+                        fallback_reason=fallback_reason,
+                    )
 
                 self._acted_this_round.add(seat_index)
 
@@ -229,6 +256,73 @@ class BettingRound:
                 break
 
         return self._action_records
+
+    def _save_decision_trace(
+        self,
+        obs: Observation,
+        legal_actions: list[Action],
+        chosen_action: Action,
+        agent: BaseAgent,
+        latency_ms: float,
+        fallback_reason: str,
+    ) -> None:
+        if self._trace_store is None:
+            return
+
+        extra = getattr(agent, "last_trace", {}) or {}
+        trace = DecisionTrace(
+            session_id=self._session_id,
+            hand_id=self._hand_id,
+            street=self.street,
+            player_id=obs.player_id,
+            observation=self._observation_to_dict(obs),
+            legal_actions=[self._action_to_dict(a) for a in legal_actions],
+            chosen_action=str(chosen_action),
+            prompt_summary=extra.get("prompt_summary", ""),
+            llm_raw_response=extra.get("llm_raw_response", ""),
+            tool_call=extra.get("tool_call"),
+            parsed_action=extra.get("parsed_action", str(chosen_action)),
+            fallback_reason=extra.get("fallback_reason") or fallback_reason,
+            memory_context_summary=extra.get("memory_context_summary", ""),
+            strategy_context_summary=extra.get("strategy_context_summary", ""),
+            retrieved_memory_ids=extra.get("retrieved_memory_ids", []),
+            retrieved_strategy_chunk_ids=extra.get("retrieved_strategy_chunk_ids", []),
+            memory_fallback_reason=extra.get("memory_fallback_reason", ""),
+            latency_ms=extra.get("latency_ms", latency_ms),
+        )
+        self._trace_store.save(trace)
+
+    def _action_to_dict(self, action: Action) -> dict:
+        return {"type": action.type.value, "amount": action.amount}
+
+    def _observation_to_dict(self, obs: Observation) -> dict:
+        return {
+            "player_id": obs.player_id,
+            "style": obs.style,
+            "hole_cards": [str(c) for c in obs.hole_cards],
+            "stack_bb": obs.stack_bb,
+            "seat_index": obs.seat_index,
+            "button_index": obs.button_index,
+            "num_players": obs.num_players,
+            "position_name": obs.position_name,
+            "street": obs.street,
+            "community_cards": [str(c) for c in obs.community_cards],
+            "pot_bb": obs.pot_bb,
+            "current_bet_to_call_bb": obs.current_bet_to_call_bb,
+            "min_raise_bb": obs.min_raise_bb,
+            "max_raise_bb": obs.max_raise_bb,
+            "actions_this_street": [
+                {
+                    "player_id": pid,
+                    "action": str(action),
+                    "position_name": position,
+                    "stack_after_bb": stack,
+                }
+                for pid, action, position, stack in obs.actions_this_street
+            ],
+            "active_opponents": obs.active_opponents,
+            "spr": obs.spr,
+        }
 
     def _build_observation_for_seat(self, seat_index: int) -> Observation:
         """Build an Observation for the given seat."""
