@@ -26,5 +26,5 @@ llm:
   api_key: ""
   api_base: "https://open.bigmodel.cn/api/paas/v4"
   model: "glm-4-flash"
-  enabled: false
+  enabled: true
   use_skills_in_prompt: true

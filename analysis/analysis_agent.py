@@ -158,9 +158,25 @@ class AnalysisAgent:
             for winner in pot.get("winners", []):
                 player = winner.get("player", "")
                 hand = winner.get("hand", "")
-                notes.append(f"✓ {player} 赢得底池 ({hand})")
+                notes.append(f"✓ {player} 赢得底池（{self._translate_hand_name(hand)}）")
 
         return notes
+
+    def _translate_hand_name(self, hand_name: str) -> str:
+        hand_map = {
+            "High Card": "高牌",
+            "Pair": "一对",
+            "Two Pair": "两对",
+            "Three of a Kind": "三条",
+            "Straight": "顺子",
+            "Flush": "同花",
+            "Full House": "葫芦",
+            "Four of a Kind": "四条",
+            "Straight Flush": "同花顺",
+            "Royal Flush": "皇家同花顺",
+            "Last player": "最后未弃牌玩家",
+        }
+        return hand_map.get(hand_name, hand_name)
 
 
 def print_analysis(analysis: HandAnalysis) -> None:

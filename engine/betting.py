@@ -53,6 +53,7 @@ class BettingRound:
         hand_id: str = "",
         session_id: str = "",
         trace_store: DecisionTraceStore | None = None,
+        state_callback=None,
     ):
         self.seats = seats
         self.action_order = action_order
@@ -66,6 +67,7 @@ class BettingRound:
         self._hand_id = hand_id
         self._session_id = session_id or "default"
         self._trace_store = trace_store
+        self._state_callback = state_callback
 
         self._last_raise_increment = current_bet_bb if street == "preflop" and current_bet_bb > 0 else big_blind_bb
         self._acted_this_round: set[int] = set()
@@ -88,6 +90,27 @@ class BettingRound:
     @property
     def action_records(self) -> list[dict]:
         return self._action_records
+
+    def _emit_state(self) -> None:
+        if self._state_callback is None:
+            return
+        self._state_callback({
+            "street": self.street,
+            "pot_bb": self._pot_bb,
+            "community_cards": [str(c) for c in self._community_cards],
+            "players": [
+                {
+                    "id": s["player_id"],
+                    "stack_bb": s["stack_bb"],
+                    "position": s.get("position_name", ""),
+                    "folded": s.get("folded", False),
+                    "all_in": s.get("all_in", False),
+                    "current_bet_bb": s.get("current_bet_bb", 0.0),
+                    "total_bet_bb": s.get("total_bet_bb", 0.0),
+                }
+                for s in self.seats
+            ],
+        })
 
     def _count_active(self) -> int:
         """Count seats that are not folded and not all-in."""
@@ -220,6 +243,7 @@ class BettingRound:
 
                 # Print action immediately for real-time display
                 self._print_action(seat, action, stack_after)
+                self._emit_state()
 
                 if agent is not None:
                     self._save_decision_trace(

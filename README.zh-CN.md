@@ -98,6 +98,7 @@ GET  /sessions/{session_id}/history
 
 ```text
 GET  /sessions/{session_id}/traces
+GET  /sessions/{session_id}/trace-stream
 GET  /sessions/{session_id}/hands/{hand_id}/traces
 POST /sessions/{session_id}/analyze
 POST /sessions/{session_id}/coach

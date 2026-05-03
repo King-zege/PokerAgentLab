@@ -68,6 +68,29 @@ class DecisionTraceStore:
                     continue
         return traces
 
+    def load_since_line(self, start_line: int = 0) -> tuple[list[dict[str, Any]], int]:
+        """Load traces appended after start_line and return the next line cursor."""
+        if start_line < 0:
+            start_line = 0
+        if not self.filepath.exists():
+            return [], start_line
+
+        traces: list[dict[str, Any]] = []
+        line_count = 0
+        with open(self.filepath, "r", encoding="utf-8") as f:
+            for line in f:
+                line_count += 1
+                if line_count <= start_line:
+                    continue
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    traces.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+        return traces, line_count
+
     def load_by_hand(self, hand_id: str) -> list[dict[str, Any]]:
         return [t for t in self.load_all() if t.get("hand_id") == hand_id]
 

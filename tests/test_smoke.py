@@ -1,4 +1,6 @@
 import time
+from types import SimpleNamespace
+from uuid import uuid4
 
 from fastapi.testclient import TestClient
 
@@ -8,6 +10,13 @@ from agent.observation import Observation
 from engine.action import Action, ActionType
 from engine.card import Card, Rank, Suit
 from engine.game import Game
+from engine.pot import PotWinner
+from api.game_runner import _build_last_hand_result
+from analysis.coach_agent import CoachAgent
+from analysis.analysis_agent import AnalysisAgent
+from strategy.style_profile import StyleRegistry
+from memory.hand_history import ActionRecord, HandHistory
+from memory.decision_trace import DecisionTrace, DecisionTraceStore
 
 
 def test_non_interactive_session_generates_history_and_traces():
@@ -21,6 +30,168 @@ def test_non_interactive_session_generates_history_and_traces():
     assert len(results) == 1
     assert len(game.history_store.load_all()) == 1
     assert len(game.trace_store.load_all()) >= 1
+
+
+def test_decision_trace_store_reads_incremental_lines():
+    session_id = f"pytest_trace_{uuid4().hex}"
+    store = DecisionTraceStore.for_session(session_id)
+    store.clear()
+
+    store.save(DecisionTrace(session_id=session_id, hand_id="h1", street="preflop", player_id="Alice", observation={}, legal_actions=[], chosen_action="call"))
+    traces, next_line = store.load_since_line(0)
+
+    assert len(traces) == 1
+    assert traces[0]["player_id"] == "Alice"
+
+    store.save(DecisionTrace(session_id=session_id, hand_id="h1", street="preflop", player_id="Bob", observation={}, legal_actions=[], chosen_action="fold"))
+    traces, next_line = store.load_since_line(next_line)
+
+    assert len(traces) == 1
+    assert traces[0]["player_id"] == "Bob"
+    assert next_line == 2
+
+
+def test_trace_stream_returns_sse_trace_event():
+    client = TestClient(main_api.app)
+    session_id = f"pytest_sse_{uuid4().hex}"
+    store = DecisionTraceStore.for_session(session_id)
+    store.clear()
+    store.save(DecisionTrace(session_id=session_id, hand_id="h1", street="flop", player_id="Alice", observation={}, legal_actions=[], chosen_action="bet 2BB"))
+
+    with client.stream("GET", f"/sessions/{session_id}/trace-stream?once=true") as response:
+        assert response.status_code == 200
+        text = next(response.iter_text())
+
+    assert "event: trace" in text
+    assert '"player_id":"Alice"' in text
+
+
+def test_trace_stream_empty_session_sends_keepalive():
+    client = TestClient(main_api.app)
+
+    with client.stream("GET", f"/sessions/missing_{uuid4().hex}/trace-stream?once=true") as response:
+        assert response.status_code == 200
+        text = next(response.iter_text())
+
+    assert ": keep-alive" in text
+
+
+def test_last_hand_result_reveals_hole_cards_only_at_showdown():
+    result = SimpleNamespace(
+        hand_id="h_showdown",
+        pot_total_bb=200,
+        community_cards=[
+            Card(Rank.ACE, Suit.SPADES),
+            Card(Rank.KING, Suit.HEARTS),
+            Card(Rank.QUEEN, Suit.CLUBS),
+            Card(Rank.JACK, Suit.DIAMONDS),
+            Card(Rank.TEN, Suit.SPADES),
+        ],
+        final_seats=[
+            {
+                "player_id": "Human",
+                "stack_bb": 0,
+                "position_name": "BTN/SB",
+                "folded": False,
+                "all_in": True,
+                "is_active": True,
+                "hole_cards": [Card(Rank.TWO, Suit.SPADES), Card(Rank.THREE, Suit.SPADES)],
+            },
+            {
+                "player_id": "Alice",
+                "stack_bb": 200,
+                "position_name": "BB",
+                "folded": False,
+                "all_in": True,
+                "is_active": True,
+                "hole_cards": [Card(Rank.ACE, Suit.CLUBS), Card(Rank.ACE, Suit.DIAMONDS)],
+            },
+        ],
+        winners=[PotWinner(seat_index=1, amount_bb=200, hand_name="Pair")],
+    )
+
+    payload = _build_last_hand_result(result)
+
+    assert payload["showdown"] is True
+    assert len(payload["community_cards"]) == 5
+    assert payload["players"][0]["hole_cards"]
+    assert payload["players"][1]["hole_cards"]
+
+
+def test_last_hand_result_hides_hole_cards_when_everyone_else_folds():
+    result = SimpleNamespace(
+        hand_id="h_fold",
+        pot_total_bb=3,
+        community_cards=[],
+        final_seats=[
+            {
+                "player_id": "Human",
+                "stack_bb": 98,
+                "position_name": "BTN/SB",
+                "folded": True,
+                "all_in": False,
+                "is_active": True,
+                "hole_cards": [Card(Rank.TWO, Suit.SPADES), Card(Rank.THREE, Suit.SPADES)],
+            },
+            {
+                "player_id": "Alice",
+                "stack_bb": 102,
+                "position_name": "BB",
+                "folded": False,
+                "all_in": False,
+                "is_active": True,
+                "hole_cards": [Card(Rank.ACE, Suit.CLUBS), Card(Rank.ACE, Suit.DIAMONDS)],
+            },
+        ],
+        winners=[PotWinner(seat_index=1, amount_bb=3, hand_name="Last player")],
+    )
+
+    payload = _build_last_hand_result(result)
+
+    assert payload["showdown"] is False
+    assert all("hole_cards" not in player for player in payload["players"])
+
+
+def test_coach_review_returns_action_summary_without_deviations():
+    history = HandHistory(
+        hand_id="h_review",
+        timestamp="2026-05-02 20:00:00",
+        table_size=2,
+        button_index=0,
+        small_blind_bb=0.5,
+        big_blind_bb=1,
+        players=[
+            {"id": "Human", "style": "human", "stack_bb": 100},
+            {"id": "Alice", "style": "llm", "stack_bb": 100},
+        ],
+        hole_cards={"Human": ["As", "Kd"], "Alice": ["Qs", "Qd"]},
+        community_cards=["2s", "7h", "Jc", "4d", "9s"],
+        actions=[
+            ActionRecord(
+                street="preflop",
+                seat_index=0,
+                player_id="Human",
+                action="call",
+                action_amount=1,
+                stack_before_bb=100,
+                pot_before_bb=1.5,
+                explanation="",
+                position_name="BTN/SB",
+                style="human",
+            )
+        ],
+        pots=[{"amount_bb": 2, "winners": [{"player": "Human", "hand": "High Card"}]}],
+        final_stacks={"Human": 101, "Alice": 99},
+    )
+
+    coach = CoachAgent(AnalysisAgent(StyleRegistry("config/styles")))
+    result = coach.review_session([history], focus_player_id="Human")
+
+    assert result["total_hands"] == 1
+    assert any("动作样本" in finding for finding in result["key_findings"])
+    assert any("跟注=1" in finding for finding in result["key_findings"])
+    assert result["training_goals"]
+    assert result["hand_reviews"][0]["action_count"] == 1
 
 
 def test_api_session_reaches_waiting_state_and_accepts_action():

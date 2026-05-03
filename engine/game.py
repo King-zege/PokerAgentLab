@@ -26,6 +26,7 @@ class Game:
         self.hand_count = 0
         self.results: list[HandResult] = []
         self.session_id = session_id
+        self.state_callback = None
 
         # Load style profiles
         styles_dir = Path(config_path).parent / "styles"
@@ -59,22 +60,19 @@ class Game:
                 self.agent_map[p["id"]] = HumanAgent(p["id"], p["style"])
                 self.human_id = p["id"]
             elif p["style"] == "llm":
-                if not llm_config.get("enabled") or not llm_config.get("api_key"):
-                    self.agent_map[p["id"]] = RuleAgent(p["id"], style="llm-disabled")
-                else:
-                    import os
-                    project_root = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
-                    skills_dir = os.path.join(project_root, "strategy", "skills")
-                    self.agent_map[p["id"]] = LLMAgent(
-                        player_id=p["id"],
-                        api_key=llm_config.get("api_key"),
-                        api_base=llm_config.get("api_base", "https://api.openai.com/v1"),
-                        model=llm_config.get("model", "gpt-4o-mini"),
-                        style=p.get("llm_style", "balanced"),
-                        skills_dir=skills_dir,
-                        use_skills_in_prompt=llm_config.get("use_skills_in_prompt", True),
-                        memory_manager=self.memory_manager,
-                    )
+                import os
+                project_root = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
+                skills_dir = os.path.join(project_root, "strategy", "skills")
+                self.agent_map[p["id"]] = LLMAgent(
+                    player_id=p["id"],
+                    api_key=llm_config.get("api_key") if llm_config.get("enabled") else "",
+                    api_base=llm_config.get("api_base", "https://api.openai.com/v1"),
+                    model=llm_config.get("model", "gpt-4o-mini"),
+                    style=p.get("llm_style", "balanced"),
+                    skills_dir=skills_dir,
+                    use_skills_in_prompt=llm_config.get("use_skills_in_prompt", True),
+                    memory_manager=self.memory_manager,
+                )
             else:
                 self.agent_map[p["id"]] = StyleAgent(p["id"], style_profile)
 
@@ -95,6 +93,10 @@ class Game:
         self.decision_logger = DecisionLogger(log_path)
         self.trace_store = DecisionTraceStore.for_session(session_id or "default")
         self.table_size = self.config.get("table", {}).get("size", 6)
+
+    def set_state_callback(self, callback) -> None:
+        """Register a callback for live table snapshots during a hand."""
+        self.state_callback = callback
 
     def _resolve_llm_config(self, llm_config: dict) -> dict:
         """Merge YAML LLM settings with environment variables."""
@@ -147,6 +149,7 @@ class Game:
             deck_seed=seed,
             session_id=self.session_id or "default",
             trace_store=self.trace_store,
+            state_callback=self.state_callback,
         )
 
         result = hand.play(self.agent_map)

@@ -100,6 +100,7 @@ Observability and analysis:
 
 ```text
 GET  /sessions/{session_id}/traces
+GET  /sessions/{session_id}/trace-stream
 GET  /sessions/{session_id}/hands/{hand_id}/traces
 GET  /sessions/{session_id}/history
 POST /sessions/{session_id}/analyze

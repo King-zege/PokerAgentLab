@@ -100,10 +100,12 @@ class Hand:
         deck_seed: int | None = None,
         session_id: str = "",
         trace_store: DecisionTraceStore | None = None,
+        state_callback=None,
     ):
         self.hand_id = hand_id
         self.session_id = session_id
         self.trace_store = trace_store
+        self.state_callback = state_callback
         self.small_blind_bb = small_blind_bb
         self.big_blind_bb = big_blind_bb
         self.button_index = button_index
@@ -155,6 +157,7 @@ class Hand:
 
         # 2. Deal hole cards
         self._deal_hole_cards()
+        self._emit_state("preflop")
 
         # 3. Preflop betting
         print(f"{separator}")
@@ -260,6 +263,29 @@ class Hand:
         # Reset current_bet_bb for each seat (new street)
         for seat in self.seats:
             seat["current_bet_bb"] = 0.0
+        self._emit_state(street)
+
+    def _emit_state(self, street: str) -> None:
+        if self.state_callback is None:
+            return
+        self.state_callback({
+            "hand_id": self.hand_id,
+            "street": street,
+            "pot_bb": self.pot_bb,
+            "community_cards": [str(c) for c in self.community_cards],
+            "players": [
+                {
+                    "id": s["player_id"],
+                    "stack_bb": s["stack_bb"],
+                    "position": s.get("position_name", ""),
+                    "folded": s.get("folded", False),
+                    "all_in": s.get("all_in", False),
+                    "current_bet_bb": s.get("current_bet_bb", 0.0),
+                    "total_bet_bb": s.get("total_bet_bb", 0.0),
+                }
+                for s in self.seats
+            ],
+        })
 
     def _action_order(self, street: str) -> list[int]:
         """Return seat indices in action order for the given street."""
@@ -314,6 +340,7 @@ class Hand:
             hand_id=self.hand_id,
             session_id=self.session_id,
             trace_store=self.trace_store,
+            state_callback=self.state_callback,
         )
 
         records = betting_round.run(agent_map)

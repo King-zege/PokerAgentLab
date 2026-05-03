@@ -9,12 +9,13 @@ if _sys.platform == "win32":
 import yaml
 import time
 import threading
+import json
 from pathlib import Path
 from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from api.models import (
     CreateSessionRequest, HealthResponse, ConfigResponse, PlayerInfo,
@@ -533,6 +534,68 @@ def get_session_traces(session_id: str):
     store = DecisionTraceStore.for_session(session_id)
     traces = store.load_all()
     return TraceListResponse(session_id=session_id, total_traces=len(traces), traces=traces)
+
+
+def _compact_trace_for_stream(trace: dict) -> dict:
+    """Keep SSE trace events small and focused on UI display fields."""
+    return {
+        "session_id": trace.get("session_id"),
+        "hand_id": trace.get("hand_id"),
+        "street": trace.get("street"),
+        "player_id": trace.get("player_id"),
+        "chosen_action": trace.get("chosen_action"),
+        "parsed_action": trace.get("parsed_action"),
+        "fallback_reason": trace.get("fallback_reason", ""),
+        "retrieved_memory_ids": trace.get("retrieved_memory_ids") or [],
+        "retrieved_strategy_chunk_ids": trace.get("retrieved_strategy_chunk_ids") or [],
+        "timestamp": trace.get("timestamp", ""),
+    }
+
+
+def _sse_event(event: str, data: dict) -> str:
+    payload = json.dumps(data, ensure_ascii=False, separators=(",", ":"))
+    return f"event: {event}\ndata: {payload}\n\n"
+
+
+@app.get("/sessions/{session_id}/trace-stream", tags=["Observability"])
+def stream_session_traces(session_id: str, once: bool = False):
+    """Stream compact decision traces as Server-Sent Events."""
+    store = DecisionTraceStore.for_session(session_id)
+
+    def event_stream():
+        next_line = 0
+        completed_idle_ticks = 0
+
+        while True:
+            new_traces, next_line = store.load_since_line(next_line)
+            for trace in new_traces:
+                yield _sse_event("trace", _compact_trace_for_stream(trace))
+
+            runner = get_runner(session_id)
+            session = session_store.get(session_id)
+            status = runner.state.status if runner else (session.status if session else None)
+            if status in {"completed", "error"}:
+                completed_idle_ticks += 1
+                if completed_idle_ticks >= 4:
+                    break
+            else:
+                completed_idle_ticks = 0
+
+            if not new_traces:
+                yield ": keep-alive\n\n"
+            if once:
+                break
+            time.sleep(0.5)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.get("/sessions/{session_id}/hands/{hand_id}/traces", response_model=TraceListResponse, tags=["Observability"])

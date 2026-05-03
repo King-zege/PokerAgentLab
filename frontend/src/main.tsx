@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './styles.css';
 
@@ -64,14 +64,81 @@ function App() {
   const [numHands, setNumHands] = useState(3);
   const [message, setMessage] = useState('就绪');
   const [actionAmounts, setActionAmounts] = useState<Record<string, number>>({});
+  const [traceStreamStatus, setTraceStreamStatus] = useState<'idle' | 'connected' | 'fallback'>('idle');
+  const traceStreamRef = useRef<EventSource | null>(null);
+  const seenTraceKeysRef = useRef<Set<string>>(new Set());
 
   const canAct = state?.status === 'waiting_for_action' && !state.hand_complete && state.legal_actions.length > 0;
 
   useEffect(() => {
     if (!state) return;
-    const timer = window.setInterval(() => refreshAll(sessionId), 1200);
-    return () => window.clearInterval(timer);
+    connectTraceStream(state.session_id);
+    return () => closeTraceStream();
   }, [state?.session_id]);
+
+  useEffect(() => {
+    if (!state) return;
+    const timer = window.setInterval(() => refreshAll(state.session_id, { includeTraces: traceStreamStatus !== 'connected' }), 1200);
+    return () => window.clearInterval(timer);
+  }, [state?.session_id, traceStreamStatus]);
+
+  useEffect(() => {
+    return () => closeTraceStream();
+  }, []);
+
+  function closeTraceStream() {
+    traceStreamRef.current?.close();
+    traceStreamRef.current = null;
+  }
+
+  function traceKey(trace: any) {
+    return [
+      trace?.session_id || sessionId,
+      trace?.hand_id || '',
+      trace?.player_id || '',
+      trace?.timestamp || '',
+      trace?.chosen_action || trace?.parsed_action || '',
+    ].join('|');
+  }
+
+  function applyTraceSnapshot(nextTraces: any[]) {
+    const nextSeen = new Set<string>();
+    const deduped: any[] = [];
+    for (const trace of nextTraces) {
+      const key = traceKey(trace);
+      if (nextSeen.has(key)) continue;
+      nextSeen.add(key);
+      deduped.push(trace);
+    }
+    seenTraceKeysRef.current = nextSeen;
+    setTraces(deduped);
+  }
+
+  function appendTrace(trace: any) {
+    const key = traceKey(trace);
+    if (seenTraceKeysRef.current.has(key)) return;
+    seenTraceKeysRef.current.add(key);
+    setTraces(prev => [...prev, trace]);
+  }
+
+  function connectTraceStream(id: string) {
+    if (traceStreamRef.current?.url.includes(`/sessions/${encodeURIComponent(id)}/trace-stream`)) return;
+    closeTraceStream();
+    const stream = new EventSource(`${API}/sessions/${encodeURIComponent(id)}/trace-stream`);
+    traceStreamRef.current = stream;
+    setTraceStreamStatus('idle');
+
+    stream.onopen = () => setTraceStreamStatus('connected');
+    stream.addEventListener('trace', event => {
+      try {
+        appendTrace(JSON.parse((event as MessageEvent).data));
+      } catch {
+        setTraceStreamStatus('fallback');
+      }
+    });
+    stream.onerror = () => setTraceStreamStatus('fallback');
+  }
+
 
   async function request(path: string, options?: RequestInit) {
     const res = await fetch(`${API}${path}`, {
@@ -95,6 +162,10 @@ function App() {
 
   async function startSession() {
     try {
+      closeTraceStream();
+      setTraceStreamStatus('idle');
+      seenTraceKeysRef.current = new Set();
+      setTraces([]);
       setMessage('正在创建牌局...');
       await request('/sessions', {
         method: 'POST',
@@ -107,12 +178,14 @@ function App() {
     }
   }
 
-  async function refreshAll(id = sessionId) {
+  async function refreshAll(id = sessionId, options: { includeTraces?: boolean } = {}) {
     try {
       const nextState = await request(`/sessions/${id}/state`);
       setState(nextState);
-      const traceData = await requestOptional(`/sessions/${id}/traces`);
-      if (traceData) setTraces(traceData.traces || []);
+      if (options.includeTraces ?? true) {
+        const traceData = await requestOptional(`/sessions/${id}/traces`);
+        if (traceData) applyTraceSnapshot(traceData.traces || []);
+      }
       const profileData = await requestOptional('/memory/profile');
       if (profileData) setMemoryProfile(profileData);
     } catch (err) {
@@ -126,8 +199,10 @@ function App() {
       const nextState = await request(`/sessions/${id}/state`);
       latest = nextState;
       setState(nextState);
-      const traceData = await requestOptional(`/sessions/${id}/traces`);
-      if (traceData) setTraces(traceData.traces || []);
+      if (traceStreamStatus !== 'connected') {
+        const traceData = await requestOptional(`/sessions/${id}/traces`);
+        if (traceData) applyTraceSnapshot(traceData.traces || []);
+      }
       if (done(nextState)) return nextState;
       await sleep(150);
     }
@@ -170,11 +245,12 @@ function App() {
 
   async function loadAnalysis() {
     try {
+      setMessage('正在加载复盘...');
       const historyData = await requestOptional(`/sessions/${sessionId}/history`);
-      if (historyData) setHistory(historyData);
+      setHistory(historyData);
       const coachData = await request(`/sessions/${sessionId}/coach`, { method: 'POST' });
       setCoach(coachData);
-      setMessage('复盘反馈已加载');
+      setMessage(`复盘反馈已加载：${coachData.total_hands ?? historyData?.total_hands ?? 0} 手`);
     } catch (err) {
       setMessage((err as Error).message);
     }
@@ -226,6 +302,12 @@ function App() {
   }
 
   const latestTrace = useMemo(() => traces[traces.length - 1], [traces]);
+  const analysisTotalHands = history?.total_hands ?? coach?.total_hands ?? '-';
+  const traceStreamText = {
+    idle: '实时追踪连接中',
+    connected: '实时追踪已连接',
+    fallback: '实时追踪断开，已回退到刷新模式',
+  }[traceStreamStatus];
   const actionAmount = (action: LegalAction) => {
     if (action.type === 'bet' || action.type === 'raise') {
       const fallback = action.min ?? action.amount ?? 0;
@@ -355,6 +437,7 @@ function App() {
               <div className="traceChips">
                 <span>记忆 {latestTrace.retrieved_memory_ids?.length || 0}</span>
                 <span>策略 {latestTrace.retrieved_strategy_chunk_ids?.length || 0}</span>
+                <span>{traceStreamText}</span>
               </div>
               <div className="traceList">
                 {traces.slice(-12).map((trace, index) => (
@@ -374,8 +457,31 @@ function App() {
             <h2>复盘分析</h2>
             <button onClick={loadAnalysis}>加载</button>
           </div>
-          <p>总手数：{history?.total_hands ?? '-'}</p>
-          <p>{coach?.key_findings?.[0] || '教练复盘会显示在这里。'}</p>
+          <p>总手数：{analysisTotalHands}</p>
+          {coach ? (
+            <div className="reviewBlock">
+              <strong>关键发现</strong>
+              {(coach.key_findings || []).map((finding: string, index: number) => (
+                <p key={`finding-${index}`}>{finding}</p>
+              ))}
+              <strong>训练目标</strong>
+              {(coach.training_goals || []).map((goal: string, index: number) => (
+                <p key={`goal-${index}`}>{goal}</p>
+              ))}
+              <strong>手牌复盘</strong>
+              {(coach.hand_reviews || []).slice(0, 4).map((hand: any) => (
+                <div className="reviewItem" key={hand.hand_id}>
+                  <span>{hand.hand_id} · {hand.showdown ? '摊牌' : '未摊牌'} · {hand.action_count ?? 0} 次决策</span>
+                  {(hand.overall_notes || []).slice(0, 2).map((note: string, index: number) => (
+                    <p key={`${hand.hand_id}-note-${index}`}>{note}</p>
+                  ))}
+                  {(hand.critical_decisions || []).length === 0 && <p>没有检测到明显风格偏离。</p>}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p>教练复盘会显示在这里。</p>
+          )}
           <div className="actions">
             <button onClick={consolidateMemory}>沉淀记忆</button>
             <button onClick={loadMemoryContext}>记忆上下文</button>

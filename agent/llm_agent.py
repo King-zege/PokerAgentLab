@@ -70,6 +70,15 @@ class LLMAgent(BaseAgent):
             "fallback_reason": "",
         }
 
+        if not self.api_key:
+            self.last_trace.update({
+                "llm_raw_response": "",
+                "parsed_action": str(legal_actions[0]) if legal_actions else "",
+                "fallback_reason": "POKER_LLM_API_KEY is not set; used first legal action",
+                "latency_ms": (time.time() - start_time) * 1000,
+            })
+            return legal_actions[0]
+
         try:
             response, num_calls = self._call_llm_with_count(prompt)
             elapsed = time.time() - start_time
