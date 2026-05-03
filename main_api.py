@@ -343,20 +343,25 @@ def get_session_history(session_id: str):
         player_stats[pid] = stats
 
     # Convert to response models
+    def read_field(record, field: str, default=None):
+        if isinstance(record, dict):
+            return record.get(field, default)
+        return getattr(record, field, default)
+
     hands = []
     for h in histories:
         actions = [
             ActionRecordResponse(
-                street=a.get("street", ""),
-                seat_index=a.get("seat_index", 0),
-                player_id=a.get("player_id", ""),
-                action=a.get("action", ""),
-                action_amount=a.get("action_amount", 0.0),
-                stack_before_bb=a.get("stack_before_bb", 0.0),
-                pot_before_bb=a.get("pot_before_bb", 0.0),
-                explanation=a.get("explanation", ""),
-                position_name=a.get("position_name", ""),
-                style=a.get("style", ""),
+                street=read_field(a, "street", ""),
+                seat_index=read_field(a, "seat_index", 0),
+                player_id=read_field(a, "player_id", ""),
+                action=read_field(a, "action", ""),
+                action_amount=read_field(a, "action_amount", 0.0),
+                stack_before_bb=read_field(a, "stack_before_bb", 0.0),
+                pot_before_bb=read_field(a, "pot_before_bb", 0.0),
+                explanation=read_field(a, "explanation", ""),
+                position_name=read_field(a, "position_name", ""),
+                style=read_field(a, "style", ""),
             )
             for a in h.actions
         ]
@@ -649,7 +654,16 @@ def coach_session(session_id: str):
 
     return CoachResponse(
         session_id=session_id,
+        report_title=result["report_title"],
+        focus_player_id=result["focus_player_id"],
         total_hands=result["total_hands"],
+        summary=result["summary"],
+        action_profile=result["action_profile"],
+        street_profile=result["street_profile"],
+        leak_candidates=result["leak_candidates"],
+        critical_spots=result["critical_spots"],
+        training_plan=result["training_plan"],
+        next_drill=result["next_drill"],
         key_findings=result["key_findings"],
         training_goals=result["training_goals"],
         hand_reviews=result["hand_reviews"],

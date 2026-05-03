@@ -212,7 +212,16 @@ class SelfPlayResponse(BaseModel):
 
 class CoachResponse(BaseModel):
     session_id: str
+    report_title: str = "Poker Agent Lab 训练报告"
+    focus_player_id: str | None = None
     total_hands: int
+    summary: dict[str, Any] = Field(default_factory=dict)
+    action_profile: list[dict[str, Any]] = Field(default_factory=list)
+    street_profile: list[dict[str, Any]] = Field(default_factory=list)
+    leak_candidates: list[dict[str, Any]] = Field(default_factory=list)
+    critical_spots: list[dict[str, Any]] = Field(default_factory=list)
+    training_plan: list[dict[str, Any]] = Field(default_factory=list)
+    next_drill: dict[str, Any] = Field(default_factory=dict)
     key_findings: list[str]
     training_goals: list[str]
     hand_reviews: list[dict[str, Any]]

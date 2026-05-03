@@ -1,4 +1,4 @@
-import time
+﻿import time
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -152,7 +152,7 @@ def test_last_hand_result_hides_hole_cards_when_everyone_else_folds():
     assert all("hole_cards" not in player for player in payload["players"])
 
 
-def test_coach_review_returns_action_summary_without_deviations():
+def test_coach_review_returns_training_report_without_deviations():
     history = HandHistory(
         hand_id="h_review",
         timestamp="2026-05-02 20:00:00",
@@ -188,10 +188,28 @@ def test_coach_review_returns_action_summary_without_deviations():
     result = coach.review_session([history], focus_player_id="Human")
 
     assert result["total_hands"] == 1
+    assert result["report_title"] == "Poker Agent Lab 训练报告"
+    assert result["summary"]["total_actions"] == 1
+    assert result["summary"]["showdown_hands"] == 1
+    assert result["action_profile"][0]["label"] == "跟注"
     assert any("动作样本" in finding for finding in result["key_findings"])
     assert any("跟注=1" in finding for finding in result["key_findings"])
     assert result["training_goals"]
+    assert result["training_plan"]
+    assert result["next_drill"]["hands"] >= 10
     assert result["hand_reviews"][0]["action_count"] == 1
+
+
+def test_coach_review_returns_empty_training_report_without_history():
+    coach = CoachAgent(AnalysisAgent(StyleRegistry("config/styles")))
+    result = coach.review_session([], focus_player_id="Human")
+
+    assert result["total_hands"] == 0
+    assert result["summary"]["sample_note"] == "暂无可复盘样本。"
+    assert result["action_profile"] == []
+    assert result["street_profile"] == []
+    assert result["training_plan"][0]["title"] == "扩大样本到 10 手牌"
+    assert "至少一手牌" in result["key_findings"][0]
 
 
 def test_api_session_reaches_waiting_state_and_accepts_action():
@@ -312,3 +330,4 @@ def test_llm_action_parser_falls_back_to_legal_action():
     assert agent._parse_action('{"a":"not_real"}', legal, obs) is None
     parsed = agent._parse_action('{"a":"call"}', legal, obs)
     assert parsed == Action(ActionType.CALL)
+

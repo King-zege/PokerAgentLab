@@ -1,1 +1,1 @@
-{"root":["./src/main.tsx"],"version":"5.9.3"}
+{"root":["./src/app.tsx","./src/main.tsx","./src/api/client.ts","./src/api/types.ts","./src/components/actionpanel.tsx","./src/components/analysispanel.tsx","./src/components/gametable.tsx","./src/components/memorypanel.tsx","./src/components/selfplaypanel.tsx","./src/components/tracepanel.tsx","./src/constants/labels.ts","./src/hooks/usetracestream.ts","./src/utils/trace.ts"],"version":"5.9.3"}
