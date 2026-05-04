@@ -42,6 +42,7 @@ from memory.memory_manager_agent import MemoryManagerAgent
 from memory.temporary_memory import TemporaryMemoryStore
 from analysis.analysis_agent import AnalysisAgent
 from analysis.coach_agent import CoachAgent
+from analysis.llm_coach_agent import LLMCoachAgent
 from strategy.style_profile import StyleRegistry
 from api.experiments import run_self_play_experiment, load_experiment_report
 from evaluation.rag_eval import run_rag_evaluation, load_rag_evaluation
@@ -116,6 +117,7 @@ def get_config():
     for p in config.get("players", []):
         players.append(PlayerInfo(
             id=p["id"],
+            agent_type=p.get("agent_type", "llm" if p.get("style") != "human" else "human"),
             style=p["style"],
             stack_bb=float(p["stack_bb"]),
             initial_stack_bb=float(p["stack_bb"]),
@@ -705,6 +707,7 @@ def coach_session(session_id: str):
     coach = CoachAgent(AnalysisAgent(registry))
     focus_player = _find_human_id(session.game)
     result = coach.review_session(histories, focus_player_id=focus_player)
+    llm_result = LLMCoachAgent(session_id=session_id).review(histories, result, focus_player_id=focus_player)
 
     return CoachResponse(
         session_id=session_id,
@@ -721,6 +724,10 @@ def coach_session(session_id: str):
         key_findings=result["key_findings"],
         training_goals=result["training_goals"],
         hand_reviews=result["hand_reviews"],
+        llm_coach_summary=llm_result.get("llm_coach_summary", ""),
+        personalized_feedback=llm_result.get("personalized_feedback", []),
+        memory_references=llm_result.get("memory_references", {}),
+        llm_coach_fallback_reason=llm_result.get("fallback_reason", ""),
     )
 
 

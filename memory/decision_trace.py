@@ -28,6 +28,7 @@ class DecisionTrace:
     retrieved_memory_ids: list[str] | None = None
     retrieved_strategy_chunk_ids: list[str] | None = None
     memory_fallback_reason: str = ""
+    user_memory_excluded_reason: str = ""
     latency_ms: float = 0.0
     timestamp: str = ""
 

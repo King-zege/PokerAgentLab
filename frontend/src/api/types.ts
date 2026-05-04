@@ -133,6 +133,10 @@ export type CoachResponse = {
   key_findings: string[];
   training_goals: string[];
   hand_reviews: CoachHandReview[];
+  llm_coach_summary?: string;
+  personalized_feedback?: string[];
+  memory_references?: Record<string, unknown>;
+  llm_coach_fallback_reason?: string;
 };
 
 export type MemoryCandidate = {

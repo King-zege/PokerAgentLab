@@ -312,6 +312,7 @@ class BettingRound:
             retrieved_memory_ids=extra.get("retrieved_memory_ids", []),
             retrieved_strategy_chunk_ids=extra.get("retrieved_strategy_chunk_ids", []),
             memory_fallback_reason=extra.get("memory_fallback_reason", ""),
+            user_memory_excluded_reason=extra.get("user_memory_excluded_reason", ""),
             latency_ms=extra.get("latency_ms", latency_ms),
         )
         self._trace_store.save(trace)

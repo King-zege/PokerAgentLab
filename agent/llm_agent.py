@@ -6,6 +6,7 @@ import re
 from agent.base_agent import BaseAgent
 from agent.observation import Observation
 from engine.action import Action, ActionType
+from strategy.style_profile import StyleProfile
 
 
 # Tool definition for poker action (BigModel format)
@@ -43,6 +44,7 @@ class LLMAgent(BaseAgent):
         api_base: str = "https://open.bigmodel.cn/api/paas/v4",
         model: str = "glm-4.6V",
         style: str = "balanced",
+        style_profile: StyleProfile | None = None,
         skills_dir: str = "strategy/skills",
         use_skills_in_prompt: bool = True,
         memory_manager=None,
@@ -54,6 +56,7 @@ class LLMAgent(BaseAgent):
         self.model = model
         self.skills_dir = skills_dir
         self.use_skills_in_prompt = use_skills_in_prompt
+        self.style_profile = style_profile
         self.memory_manager = memory_manager
         self._call_count = 0  # Debug counter
         self.last_trace: dict = {}
@@ -135,6 +138,8 @@ class LLMAgent(BaseAgent):
 可选动作: {actions_str}
 直接返回: {{"a":"1"}} 或 {{"a":"fold"}}"""
 
+        style_context = self._build_style_context(obs.street)
+
         if self.memory_manager is not None:
             memory_context = self.memory_manager.build_decision_context(obs, legal_actions)
             self.last_trace.update({
@@ -143,17 +148,50 @@ class LLMAgent(BaseAgent):
                 "retrieved_memory_ids": memory_context.retrieved_memory_ids,
                 "retrieved_strategy_chunk_ids": memory_context.retrieved_strategy_chunk_ids,
                 "memory_fallback_reason": memory_context.memory_fallback_reason,
+                "user_memory_excluded_reason": memory_context.user_memory_excluded_reason,
             })
-            return base_prompt + "\n\n" + memory_context.prompt_block
+            return "\n\n".join([base_prompt, style_context, memory_context.prompt_block])
 
         # Inject street-specific skills content if enabled
         if self.use_skills_in_prompt:
             skills_content = self._load_skills_for_style(obs.street)
             if skills_content:
                 # Game state first (more important for decision), then GTO guidance
-                return base_prompt + "\n\n" + skills_content
+                return "\n\n".join([base_prompt, style_context, skills_content])
 
-        return base_prompt
+        return "\n\n".join([base_prompt, style_context])
+
+    def _build_style_context(self, street: str) -> str:
+        """Build explicit style constraints for style-driven LLM decisions."""
+        if self.style_profile is None:
+            return (
+                "<style-profile-context>\n"
+                "This is the poker style target for this decision, not user memory.\n"
+                f"style={self.style}\n"
+                "</style-profile-context>"
+            )
+
+        tendency = self.style_profile.get_street_tendency(street)
+        return "\n".join([
+            "<style-profile-context>",
+            "This is the poker style target for this decision, not user memory.",
+            f"name={self.style_profile.name}",
+            f"display_name={self.style_profile.display_name}",
+            f"description={self.style_profile.description}",
+            f"preflop_vpip={self.style_profile.preflop_vpip}",
+            f"preflop_pfr={self.style_profile.preflop_pfr}",
+            f"open_threshold={self.style_profile.open_threshold}",
+            f"call_threshold={self.style_profile.call_threshold}",
+            f"reraise_threshold={self.style_profile.reraise_threshold}",
+            f"defend_bb_threshold={self.style_profile.defend_bb_threshold}",
+            (
+                f"street_tendency fold={tendency.fold_weight} check={tendency.check_weight} "
+                f"call={tendency.call_weight} bet={tendency.bet_weight} "
+                f"raise={tendency.raise_weight} all_in={tendency.all_in_weight} "
+                f"bluff_frequency={tendency.bluff_frequency} cbet_frequency={tendency.cbet_frequency}"
+            ),
+            "</style-profile-context>",
+        ])
 
     def _load_skills_for_style(self, street: str) -> str:
         """Load GTO skills content for the current style and street."""

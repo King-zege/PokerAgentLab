@@ -34,7 +34,7 @@ class SelfPlayRequest(BaseModel):
     seed: int | None = Field(default=42)
     players: list[dict] | None = Field(
         default=None,
-        description="Optional players list, e.g. [{'id':'Alice','style':'tag','stack_bb':100}]",
+        description="Optional players list, e.g. [{'id':'Alice','agent_type':'llm','style':'tag','stack_bb':100}]",
     )
     config_path: str = Field(default="config/game_config.yaml")
 
@@ -71,6 +71,7 @@ class HealthResponse(BaseModel):
 class PlayerInfo(BaseModel):
     """Player information."""
     id: str
+    agent_type: str = "llm"
     style: str
     stack_bb: float
     initial_stack_bb: float
@@ -250,6 +251,10 @@ class CoachResponse(BaseModel):
     key_findings: list[str]
     training_goals: list[str]
     hand_reviews: list[dict[str, Any]]
+    llm_coach_summary: str = ""
+    personalized_feedback: list[str] = Field(default_factory=list)
+    memory_references: dict[str, Any] = Field(default_factory=dict)
+    llm_coach_fallback_reason: str = ""
 
 
 class MemorySearchRequest(BaseModel):
@@ -325,6 +330,8 @@ class MemoryContextResponse(BaseModel):
     retrieved_memory_ids: list[str]
     retrieved_strategy_chunk_ids: list[str]
     memory_fallback_reason: str = ""
+    decision_context: dict[str, Any] = Field(default_factory=dict)
+    coach_context: dict[str, Any] = Field(default_factory=dict)
 
 
 class EvaluationReportResponse(BaseModel):

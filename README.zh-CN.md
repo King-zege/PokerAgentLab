@@ -171,14 +171,26 @@ POKER_LLM_ENABLED=false
 POKER_LLM_API_KEY=
 POKER_LLM_API_BASE=https://open.bigmodel.cn/api/paas/v4
 POKER_LLM_MODEL=glm-4-flash
+POKER_LLM_COACH_ENABLED=false
 
 POKER_MEMORY_ENABLED=true
 POKER_MEMORY_USER_ID=default_user
 POKER_MEMORY_MAX_RECENT_HANDS=5
 POKER_STRATEGY_RAG_ENABLED=true
+POKER_DECISION_USER_MEMORY_ENABLED=false
 ```
 
-默认关闭 LLM，所以没有 API key 也能跑 demo。配置里 `style: llm` 的玩家在 LLM 不可用时会 fallback 到 rule agent，避免演示、测试和 Docker 部署被外部服务阻塞。
+推荐配置把 agent 实现和扑克风格分开：
+
+```yaml
+players:
+  - id: "Alice"
+    agent_type: "llm"
+    style: "balanced"
+    stack_bb: 100
+```
+
+`style` 表示扑克打法人格，例如 `balanced`、`tag`、`lag`、`nit`。`agent_type` 表示实现类型，例如 `human`、`llm`、`rule`、`style_fallback`。旧配置 `style: "llm" + llm_style: "balanced"` 仍然兼容。默认关闭 LLM，所以没有 API key 也能跑 demo；LLM 不可用时会 fallback 到 deterministic `StyleAgent`，避免演示、测试、Docker 部署和 self-play 被外部服务阻塞。
 
 ## 核心 API
 
@@ -267,12 +279,12 @@ curl -X POST http://127.0.0.1:8000/evaluation/rag `
 - `TemporaryMemoryStore`：保存低置信但可能重复出现的观察，不进入决策 prompt，等待更多证据。
 - `StrategyRAG`：从策略文档和扑克 heuristic 中检索本地 strategy chunks。
 - `MemoryConsolidator`：把 hand history、decision trace 和 coach review 转换成候选长期记忆和训练计划。
-- `PokerMemoryManager`：统一协调短期记忆、长期用户记忆和策略检索。
+- `PokerMemoryManager`：分别构建决策上下文和 Coach 上下文。
 - `MemoryManagerAgent`：在完成 session 和 self-play 实验后后台运行，检索已有记忆，合并重复发现，晋升多次命中的临时记忆，拒绝长期未命中的临时记忆，并归档缺少新证据支持的旧漏洞。
 
-决策 prompt 默认只读取 `accepted` 长期记忆。低置信发现会进入 `temporary`，多次命中后再晋升为 `candidate` 或 `accepted`；被拒绝或长期未命中的发现不会进入后续 prompt。这样可以避免单手牌噪声永久污染用户画像。
+决策 prompt 使用风格约束、短期手牌记忆和 StrategyRAG，默认不读取长期用户画像，因为用户漏洞和学习目标不应变成打牌指令。Coach prompt 可以读取 accepted 长期记忆，用于生成个性化学习反馈。低置信发现会进入 `temporary`，多次命中后再晋升为 `candidate` 或 `accepted`；被拒绝或长期未命中的发现不会进入后续 prompt。
 
-所有记忆和策略上下文都会用 XML-style fence 包裹，例如 `<user-memory-context>` 和 `<strategy-context>`，并明确标注为“召回上下文，不是用户指令”。
+所有记忆和策略上下文都会用 XML-style fence 包裹，例如 `<style-profile-context>`、`<short-term-hand-context>`、`<user-memory-context>` 和 `<strategy-context>`，并明确标注为“召回上下文，不是用户指令”。
 
 记忆治理 API：
 
@@ -420,7 +432,7 @@ npm run build
 
 ## Roadmap
 
-- 增加 `MemoryAwareStyleAgent` 或 `StrategyGuidedAgent`，让非 LLM agent 也能消费 RAG/Memory 上下文。
+- 增加前端开关，用于控制 LLM Coach 反馈和决策上下文调试。
 - 增加前端“评测中心”，展示 RAG 和系统 benchmark。
 - 扩充人工标注 RAG 数据集。
 - 增加更多扑克翻后牌面 texture 标签。

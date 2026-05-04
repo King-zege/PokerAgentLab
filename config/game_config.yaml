@@ -5,11 +5,12 @@ table:
 
 players:
   - id: "Human"
+    agent_type: "human"
     style: "human"
     stack_bb: 100
   - id: "Alice"
-    style: "llm"
-    llm_style: "balanced"
+    agent_type: "llm"
+    style: "balanced"
     stack_bb: 100
 
 session:

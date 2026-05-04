@@ -171,14 +171,26 @@ POKER_LLM_ENABLED=false
 POKER_LLM_API_KEY=
 POKER_LLM_API_BASE=https://open.bigmodel.cn/api/paas/v4
 POKER_LLM_MODEL=glm-4-flash
+POKER_LLM_COACH_ENABLED=false
 
 POKER_MEMORY_ENABLED=true
 POKER_MEMORY_USER_ID=default_user
 POKER_MEMORY_MAX_RECENT_HANDS=5
 POKER_STRATEGY_RAG_ENABLED=true
+POKER_DECISION_USER_MEMORY_ENABLED=false
 ```
 
-LLM play is disabled by default. When `POKER_LLM_ENABLED=false` or the API key is missing, `style: llm` players fall back to a rule agent so the demo, tests, and Docker deployment remain runnable without secrets.
+Recommended player config separates implementation from poker style:
+
+```yaml
+players:
+  - id: "Alice"
+    agent_type: "llm"
+    style: "balanced"
+    stack_bb: 100
+```
+
+`style` is the poker personality (`balanced`, `tag`, `lag`, `nit`, etc.). `agent_type` chooses the implementation (`human`, `llm`, `rule`, or `style_fallback`). Older configs using `style: "llm"` with `llm_style: "balanced"` remain supported. When `POKER_LLM_ENABLED=false` or the API key is missing, LLM players fall back to deterministic `StyleAgent` behavior so the demo, tests, Docker deployment, and self-play remain runnable without secrets.
 
 ## Core APIs
 
@@ -267,12 +279,12 @@ The memory layer is local-first and auditable.
 - `TemporaryMemoryStore`: keeps low-confidence recurring observations outside the decision prompt until there is enough repeated evidence.
 - `StrategyRAG`: retrieves local strategy chunks from strategy docs and poker heuristics.
 - `MemoryConsolidator`: turns hand history, traces, and coach review into candidate long-term memories and training plans.
-- `PokerMemoryManager`: coordinates short-term memory, long-term user memory, and strategy retrieval before/after decisions.
+- `PokerMemoryManager`: builds separate decision and coach contexts.
 - `MemoryManagerAgent`: runs in the background after completed sessions and self-play experiments, compares new findings with existing memory, merges duplicates, promotes repeated temporary memories, rejects stale temporary memories, and archives unsupported accepted leaks.
 
-Decision prompts only read `accepted` long-term memories by default. Low-confidence findings are stored as `temporary`; repeated evidence can promote them to `candidate` or `accepted`, while rejected or stale findings are kept out of future prompts. This keeps the profile useful without allowing one noisy hand to permanently change the user's profile.
+Decision prompts use style constraints, short-term hand memory, and StrategyRAG. They do not read long-term user profile memory by default, because user leaks and learning goals should not become poker-action instructions. Coach prompts can read accepted long-term memories to generate personalized learning feedback. Low-confidence findings are stored as `temporary`; repeated evidence can promote them to `candidate` or `accepted`, while rejected or stale findings are kept out of future prompts.
 
-All memory and strategy context is wrapped in XML-style fences such as `<user-memory-context>` and `<strategy-context>` and explicitly marked as recalled context, not user instructions.
+All memory and strategy context is wrapped in XML-style fences such as `<style-profile-context>`, `<short-term-hand-context>`, `<user-memory-context>`, and `<strategy-context>` and explicitly marked as recalled context, not user instructions.
 
 Memory governance APIs:
 
@@ -420,7 +432,7 @@ Current coverage includes:
 
 ## Roadmap
 
-- Add `MemoryAwareStyleAgent` or `StrategyGuidedAgent` so non-LLM agents can consume RAG/Memory context.
+- Add a frontend switch for LLM coach feedback and decision-context debugging.
 - Add a frontend Evaluation Center for RAG and system benchmark visualization.
 - Expand the labeled RAG dataset beyond the initial smoke benchmark.
 - Add more poker-specific postflop board texture tags.

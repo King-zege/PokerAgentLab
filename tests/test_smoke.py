@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 import main_api
 from agent.llm_agent import LLMAgent
+from agent.style_agent import StyleAgent
 from agent.observation import Observation
 from engine.action import Action, ActionType
 from engine.card import Card, Rank, Suit
@@ -15,11 +16,14 @@ from engine.game import Game
 from engine.pot import PotWinner
 from api.game_runner import _build_last_hand_result
 from analysis.coach_agent import CoachAgent
+from analysis.llm_coach_agent import LLMCoachAgent
 from analysis.analysis_agent import AnalysisAgent
 from strategy.style_profile import StyleRegistry
 from memory.hand_history import ActionRecord, HandHistory
 from memory.decision_trace import DecisionTrace, DecisionTraceStore
 from memory.temporary_memory import TemporaryMemoryStore
+from memory.poker_memory_manager import PokerMemoryManager
+from memory.user_profile import LongTermUserProfile
 
 
 def test_non_interactive_session_generates_history_and_traces():
@@ -333,6 +337,134 @@ def test_llm_action_parser_falls_back_to_legal_action():
     assert agent._parse_action('{"a":"not_real"}', legal, obs) is None
     parsed = agent._parse_action('{"a":"call"}', legal, obs)
     assert parsed == Action(ActionType.CALL)
+
+
+def test_style_driven_llm_config_falls_back_to_style_agent_without_key(monkeypatch):
+    monkeypatch.setenv("POKER_LLM_ENABLED", "true")
+    monkeypatch.setenv("POKER_LLM_API_KEY", "")
+    config_dir = Path("data/test_configs") / f"style_llm_{uuid4().hex}"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "game.yaml"
+    config_path.write_text(
+        """
+table:
+  size: 2
+  small_blind_bb: 0.5
+  big_blind_bb: 1.0
+players:
+  - id: "Human"
+    agent_type: "human"
+    style: "human"
+    stack_bb: 100
+  - id: "Alice"
+    agent_type: "llm"
+    style: "tag"
+    stack_bb: 100
+session:
+  num_hands: 1
+  seed: 42
+llm:
+  enabled: true
+  api_key: ""
+""",
+        encoding="utf-8",
+    )
+    import shutil
+    shutil.copytree("config/styles", config_dir / "styles")
+
+    game = Game(str(config_path), session_id=f"pytest_style_llm_{uuid4().hex[:8]}")
+
+    assert game.players[1]["agent_type"] == "llm"
+    assert game.players[1]["style"] == "tag"
+    assert isinstance(game.agent_map["Alice"], StyleAgent)
+
+
+def test_legacy_llm_style_config_normalizes_to_style_driven_agent(monkeypatch):
+    monkeypatch.setenv("POKER_LLM_ENABLED", "false")
+    config_dir = Path("data/test_configs") / f"legacy_llm_{uuid4().hex}"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "game.yaml"
+    config_path.write_text(
+        """
+table:
+  size: 2
+  small_blind_bb: 0.5
+  big_blind_bb: 1.0
+players:
+  - id: "Human"
+    style: "human"
+    stack_bb: 100
+  - id: "Alice"
+    style: "llm"
+    llm_style: "balanced"
+    stack_bb: 100
+session:
+  num_hands: 1
+llm:
+  enabled: false
+""",
+        encoding="utf-8",
+    )
+    import shutil
+    shutil.copytree("config/styles", config_dir / "styles")
+
+    game = Game(str(config_path), session_id=f"pytest_legacy_llm_{uuid4().hex[:8]}")
+
+    assert game.players[1]["agent_type"] == "llm"
+    assert game.players[1]["style"] == "balanced"
+
+
+def test_decision_llm_prompt_uses_style_short_term_and_rag_not_long_term_memory():
+    session_id = f"pytest_decision_context_{uuid4().hex[:8]}"
+    profile = LongTermUserProfile(
+        user_id="pytest",
+        filepath=str(Path("data/test_memory") / f"profile_{uuid4().hex}.json"),
+    )
+    profile.upsert_memory("leaks", "UNIQUE_LONG_TERM_LEAK_SHOULD_NOT_ENTER_DECISION", [session_id], 0.9, status="accepted")
+    manager = PokerMemoryManager(session_id=session_id, user_id="pytest")
+    manager.user_profile = profile
+    registry = StyleRegistry("config/styles")
+    agent = LLMAgent("Alice", style="tag", style_profile=registry.get("tag"), memory_manager=manager)
+    obs = Observation(
+        player_id="Alice",
+        style="tag",
+        hole_cards=[Card(Rank.ACE, Suit.SPADES), Card(Rank.KING, Suit.SPADES)],
+        stack_bb=100,
+        seat_index=1,
+        button_index=0,
+        num_players=2,
+        position_name="BB",
+        street="preflop",
+        community_cards=[],
+        pot_bb=1.5,
+        current_bet_to_call_bb=1,
+        min_raise_bb=2,
+        max_raise_bb=100,
+        actions_this_street=[],
+        active_opponents=1,
+        spr=66.6,
+    )
+
+    prompt = agent._build_prompt(obs, [Action(ActionType.FOLD), Action(ActionType.CALL)])
+
+    assert "<style-profile-context>" in prompt
+    assert "<short-term-hand-context>" in prompt
+    assert "<strategy-context>" in prompt
+    assert "<user-memory-context>" not in prompt
+    assert "UNIQUE_LONG_TERM_LEAK_SHOULD_NOT_ENTER_DECISION" not in prompt
+    assert agent.last_trace["retrieved_memory_ids"] == []
+
+
+def test_llm_coach_prompt_includes_user_memory_context():
+    session_id = f"pytest_llm_coach_{uuid4().hex[:8]}"
+    marker = f"UNIQUE_COACH_MEMORY_{uuid4().hex}"
+    LongTermUserProfile().upsert_memory("goals", marker, [session_id], 0.9, status="accepted")
+    coach = LLMCoachAgent(session_id=session_id, enabled=False)
+
+    prompt = coach._build_prompt([], {"total_hands": 0, "training_plan": []}, focus_player_id="Human")
+
+    assert "<user-memory-context>" in prompt
+    assert marker in prompt
 
 
 def test_self_play_api_generates_report_with_action_distribution():

@@ -16,10 +16,10 @@ from memory.memory_manager_agent import MemoryManagerAgent
 
 
 DEFAULT_SELF_PLAYERS = [
-    {"id": "TAG", "style": "tag", "stack_bb": 100},
-    {"id": "LAG", "style": "lag", "stack_bb": 100},
-    {"id": "Balanced", "style": "balanced", "stack_bb": 100},
-    {"id": "Nit", "style": "nit", "stack_bb": 100},
+    {"id": "TAG", "agent_type": "style_fallback", "style": "tag", "stack_bb": 100},
+    {"id": "LAG", "agent_type": "style_fallback", "style": "lag", "stack_bb": 100},
+    {"id": "Balanced", "agent_type": "style_fallback", "style": "balanced", "stack_bb": 100},
+    {"id": "Nit", "agent_type": "style_fallback", "style": "nit", "stack_bb": 100},
 ]
 
 

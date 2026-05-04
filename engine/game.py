@@ -34,10 +34,12 @@ class Game:
 
         # Initialize players from config
         for p in self.config["players"]:
+            normalized = self._normalize_player_config(p)
             stack_bb = float(p["stack_bb"])
             self.players.append({
                 "id": p["id"],
-                "style": p["style"],
+                "agent_type": normalized["agent_type"],
+                "style": normalized["style"],
                 "stack_bb": stack_bb,
                 "initial_stack_bb": stack_bb,
             })
@@ -49,30 +51,34 @@ class Game:
         llm_config = self._resolve_llm_config(self.config.get("llm", {}))
 
         for p in self.players:
+            agent_type = p.get("agent_type", "llm")
             style_profile = None
-            if p["style"] != "human" and p["style"] != "llm":
-                style_profile = self.style_registry.get(p["style"])
-                if style_profile is None:
-                    style_name = self.style_registry.list_styles()[0]
-                    style_profile = self.style_registry.get(style_name)
+            if p["style"] != "human":
+                style_profile = self._get_style_profile(p["style"])
 
-            if p["style"] == "human":
-                self.agent_map[p["id"]] = HumanAgent(p["id"], p["style"])
+            if agent_type == "human":
+                self.agent_map[p["id"]] = HumanAgent(p["id"], "human")
                 self.human_id = p["id"]
-            elif p["style"] == "llm":
+            elif agent_type == "llm":
                 import os
-                project_root = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
-                skills_dir = os.path.join(project_root, "strategy", "skills")
-                self.agent_map[p["id"]] = LLMAgent(
-                    player_id=p["id"],
-                    api_key=llm_config.get("api_key") if llm_config.get("enabled") else "",
-                    api_base=llm_config.get("api_base", "https://api.openai.com/v1"),
-                    model=llm_config.get("model", "gpt-4o-mini"),
-                    style=p.get("llm_style", "balanced"),
-                    skills_dir=skills_dir,
-                    use_skills_in_prompt=llm_config.get("use_skills_in_prompt", True),
-                    memory_manager=self.memory_manager,
-                )
+                if llm_config.get("enabled") and llm_config.get("api_key"):
+                    project_root = os.path.dirname(os.path.dirname(os.path.abspath(config_path)))
+                    skills_dir = os.path.join(project_root, "strategy", "skills")
+                    self.agent_map[p["id"]] = LLMAgent(
+                        player_id=p["id"],
+                        api_key=llm_config.get("api_key"),
+                        api_base=llm_config.get("api_base", "https://api.openai.com/v1"),
+                        model=llm_config.get("model", "gpt-4o-mini"),
+                        style=p["style"],
+                        style_profile=style_profile,
+                        skills_dir=skills_dir,
+                        use_skills_in_prompt=llm_config.get("use_skills_in_prompt", True),
+                        memory_manager=self.memory_manager,
+                    )
+                else:
+                    self.agent_map[p["id"]] = StyleAgent(p["id"], style_profile)
+            elif agent_type == "rule":
+                self.agent_map[p["id"]] = RuleAgent(p["id"], style=p["style"])
             else:
                 self.agent_map[p["id"]] = StyleAgent(p["id"], style_profile)
 
@@ -93,6 +99,31 @@ class Game:
         self.decision_logger = DecisionLogger(log_path)
         self.trace_store = DecisionTraceStore.for_session(session_id or "default")
         self.table_size = self.config.get("table", {}).get("size", 6)
+
+    def _normalize_player_config(self, player: dict) -> dict:
+        """Normalize old and new player config shapes.
+
+        New shape uses agent_type for implementation and style for poker style.
+        Old shape style=llm + llm_style=balanced is still supported.
+        """
+        style = player.get("style", "balanced")
+        agent_type = player.get("agent_type")
+        if agent_type is None:
+            if style == "human":
+                agent_type = "human"
+            elif style == "llm":
+                agent_type = "llm"
+                style = player.get("llm_style", "balanced")
+            else:
+                agent_type = "llm"
+        return {"agent_type": agent_type, "style": style}
+
+    def _get_style_profile(self, style_name: str):
+        style_profile = self.style_registry.get(style_name)
+        if style_profile is not None:
+            return style_profile
+        fallback_name = "balanced" if "balanced" in self.style_registry.list_styles() else self.style_registry.list_styles()[0]
+        return self.style_registry.get(fallback_name)
 
     def set_state_callback(self, callback) -> None:
         """Register a callback for live table snapshots during a hand."""

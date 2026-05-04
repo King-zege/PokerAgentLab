@@ -19,6 +19,7 @@ data/evaluation/*.json
 data/evaluation/*.md
 data/memory/*.json
 data/test_memory/
+data/test_configs/
 config/generated_*.yaml
 decision_log*.txt
 hand_history*.jsonl
