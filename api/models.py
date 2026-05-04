@@ -39,6 +39,22 @@ class SelfPlayRequest(BaseModel):
     config_path: str = Field(default="config/game_config.yaml")
 
 
+class RagEvaluationRequest(BaseModel):
+    """Request for StrategyRAG retrieval evaluation."""
+    run_id: str | None = Field(default=None, description="Optional evaluation run identifier")
+    dataset_path: str = Field(default="evaluation/datasets/strategy_queries.jsonl")
+    top_k: int = Field(default=3, ge=1, le=20)
+
+
+class SystemEvaluationRequest(BaseModel):
+    """Request for end-to-end usefulness signal evaluation."""
+    run_id: str | None = Field(default=None, description="Optional evaluation run identifier")
+    config_path: str = Field(default="config/game_config.yaml")
+    num_hands: int = Field(default=5, ge=1, le=1000)
+    seed: int | None = Field(default=42)
+    variants: list[str] | None = Field(default=None)
+
+
 # ─── Response Models ───────────────────────────────────────────────────────────
 
 class HealthResponse(BaseModel):
@@ -281,3 +297,14 @@ class MemoryContextResponse(BaseModel):
     retrieved_memory_ids: list[str]
     retrieved_strategy_chunk_ids: list[str]
     memory_fallback_reason: str = ""
+
+
+class EvaluationReportResponse(BaseModel):
+    run_id: str
+    kind: str
+    report_path: str
+    markdown_path: str
+    metrics: dict[str, Any] | None = None
+    summary: dict[str, Any] | None = None
+    cases: list[dict[str, Any]] | None = None
+    variants: list[dict[str, Any]] | None = None

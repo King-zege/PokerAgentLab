@@ -26,6 +26,7 @@ from api.models import (
     SelfPlayRequest, SelfPlayResponse, CoachResponse, MemorySearchRequest,
     StrategySearchRequest, MemoryProfileResponse, MemorySearchResponse,
     StrategySearchResponse, ConsolidateResponse, MemoryContextResponse,
+    RagEvaluationRequest, SystemEvaluationRequest, EvaluationReportResponse,
 )
 from api.session import session_store, GameSession
 from api.game_runner import get_runner, create_runner, remove_runner
@@ -40,6 +41,8 @@ from analysis.analysis_agent import AnalysisAgent
 from analysis.coach_agent import CoachAgent
 from strategy.style_profile import StyleRegistry
 from api.experiments import run_self_play_experiment, load_experiment_report
+from evaluation.rag_eval import run_rag_evaluation, load_rag_evaluation
+from evaluation.system_eval import run_system_evaluation, load_system_evaluation
 
 
 app = FastAPI(
@@ -634,6 +637,54 @@ def get_experiment_report(experiment_id: str):
     if report is None:
         raise HTTPException(status_code=404, detail=f"Experiment '{experiment_id}' not found")
     return report
+
+
+@app.post("/evaluation/rag", response_model=EvaluationReportResponse, tags=["Evaluation"])
+def create_rag_evaluation(req: RagEvaluationRequest):
+    """Evaluate StrategyRAG precision, recall, hit rate, and MRR."""
+    try:
+        report = run_rag_evaluation(
+            dataset_path=req.dataset_path,
+            top_k=req.top_k,
+            run_id=req.run_id,
+        )
+        return EvaluationReportResponse(**report)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/evaluation/rag/{run_id}", response_model=EvaluationReportResponse, tags=["Evaluation"])
+def get_rag_evaluation(run_id: str):
+    """Return a persisted StrategyRAG evaluation report."""
+    report = load_rag_evaluation(run_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"RAG evaluation '{run_id}' not found")
+    return EvaluationReportResponse(**report)
+
+
+@app.post("/evaluation/system", response_model=EvaluationReportResponse, tags=["Evaluation"])
+def create_system_evaluation(req: SystemEvaluationRequest):
+    """Evaluate repeatable usefulness signals across self-play variants."""
+    try:
+        report = run_system_evaluation(
+            config_path=req.config_path,
+            num_hands=req.num_hands,
+            seed=req.seed,
+            variants=req.variants,
+            run_id=req.run_id,
+        )
+        return EvaluationReportResponse(**report)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/evaluation/system/{run_id}", response_model=EvaluationReportResponse, tags=["Evaluation"])
+def get_system_evaluation(run_id: str):
+    """Return a persisted system evaluation report."""
+    report = load_system_evaluation(run_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"System evaluation '{run_id}' not found")
+    return EvaluationReportResponse(**report)
 
 
 @app.post("/sessions/{session_id}/coach", response_model=CoachResponse, tags=["Analysis"])

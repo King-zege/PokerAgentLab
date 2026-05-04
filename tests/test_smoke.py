@@ -358,3 +358,33 @@ def test_self_play_api_generates_report_with_action_distribution():
     assert report_response.status_code == 200
     assert report_response.json()["experiment_id"] == experiment_id
 
+
+def test_evaluation_api_generates_rag_and_system_reports():
+    client = TestClient(main_api.app)
+    rag_run_id = f"pytest_rag_api_{uuid4().hex[:8]}"
+    system_run_id = f"pytest_system_api_{uuid4().hex[:8]}"
+
+    rag_response = client.post("/evaluation/rag", json={"run_id": rag_run_id, "top_k": 3})
+    assert rag_response.status_code == 200
+    rag_payload = rag_response.json()
+    assert rag_payload["run_id"] == rag_run_id
+    assert rag_payload["kind"] == "rag"
+    assert "precision_at_k" in rag_payload["metrics"]
+    assert rag_payload["cases"]
+
+    rag_read = client.get(f"/evaluation/rag/{rag_run_id}")
+    assert rag_read.status_code == 200
+    assert rag_read.json()["run_id"] == rag_run_id
+
+    system_response = client.post(
+        "/evaluation/system",
+        json={"run_id": system_run_id, "num_hands": 1, "seed": 11, "variants": ["baseline"]},
+    )
+    assert system_response.status_code == 200
+    system_payload = system_response.json()
+    assert system_payload["run_id"] == system_run_id
+    assert system_payload["kind"] == "system"
+    assert system_payload["variants"][0]["trace_metrics"]["total_actions"] >= 0
+
+    missing = client.get("/evaluation/rag/not_a_real_eval")
+    assert missing.status_code == 404
