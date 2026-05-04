@@ -12,7 +12,7 @@ The goal is practical study: play hands, inspect why decisions were made, retrie
 - **Legal-action decision loop**: every agent decision is limited by valid poker actions; LLM output is parsed into structured actions with fallback.
 - **Decision review**: JSONL traces record observation, legal actions, chosen action, prompt summary, raw response, fallback reason, memory/RAG references, and latency.
 - **SSE trace streaming**: the frontend can receive live agent decisions without polling full trace files.
-- **Hermes-inspired memory lifecycle**: short-term hand memory, long-term user profile candidates, strategy retrieval, and coach-confirmed memory promotion.
+- **Hermes-inspired memory lifecycle**: short-term hand memory, long-term user profiles, temporary memories, candidate promotion, and background memory governance.
 - **Explainable StrategyRAG**: local keyword/tag retrieval with score breakdown, matched terms, matched tags, source chunk IDs, and retrieval reasons.
 - **Coach training reports**: session histories are converted into Chinese training reports with findings, action profile, critical spots, leaks, and drills.
 - **Self-play reports**: batch experiments output win rate, BB/100, VPIP, PFR, aggression factor, and action distribution.
@@ -25,9 +25,10 @@ The goal is practical study: play hands, inspect why decisions were made, retrie
 2. Human, rule, style, or LLM-compatible agents act inside the same engine.
 3. Each action writes a hand history record and a decision trace.
 4. StrategyRAG retrieves relevant poker strategy chunks for agent context and debugging.
-5. Short-term memory summarizes recent hands; long-term user memories are stored as coach-confirmed candidates.
+5. Short-term memory summarizes recent hands; accepted long-term memories and StrategyRAG results can be injected into agent context.
 6. Coach reports analyze the session and generate a training plan.
-7. Self-play and evaluation runs produce measurable reports for comparison and regression checks.
+7. MemoryManagerAgent runs after completed sessions or self-play experiments to update temporary, candidate, and accepted memories.
+8. Self-play and evaluation runs produce measurable reports for comparison, regression checks, and memory-governance monitoring.
 
 ## Architecture
 
@@ -43,6 +44,9 @@ flowchart LR
   Memory --> ShortTerm["ShortTermHandMemory"]
   Memory --> Profile["LongTermUserProfile"]
   Memory --> Strategy["StrategyRAG"]
+  Memory --> Manager["MemoryManagerAgent"]
+  Manager --> Temp["TemporaryMemoryStore"]
+  Manager --> Profile
   History --> Coach["AnalysisAgent + CoachAgent"]
   Coach --> Consolidator["MemoryConsolidator"]
   History --> Experiments["Self-play Reports"]
@@ -58,7 +62,7 @@ analysis/     Hand review, style consistency checks, coach training reports
 api/          FastAPI schemas, session store, game runner, self-play experiments
 engine/       Poker rules, betting rounds, pots, showdown, hand evaluation
 evaluation/   RAG and system evaluation runners plus labeled query dataset
-memory/       History store, decision traces, user profile memory, StrategyRAG
+memory/       History store, decision traces, user profile memory, StrategyRAG, memory governance
 strategy/     Style profiles, preflop table, postflop heuristics, skill docs
 frontend/     React/Vite demo UI
 tests/        Smoke tests and memory/RAG/evaluation tests
@@ -260,13 +264,26 @@ The memory layer is local-first and auditable.
 
 - `ShortTermHandMemory`: reads recent hand histories, current session patterns, and key decision traces.
 - `LongTermUserProfile`: stores local single-user profile memories in categories such as `preferences`, `leaks`, `goals`, and `knowledge_state`.
+- `TemporaryMemoryStore`: keeps low-confidence recurring observations outside the decision prompt until there is enough repeated evidence.
 - `StrategyRAG`: retrieves local strategy chunks from strategy docs and poker heuristics.
 - `MemoryConsolidator`: turns hand history, traces, and coach review into candidate long-term memories and training plans.
 - `PokerMemoryManager`: coordinates short-term memory, long-term user memory, and strategy retrieval before/after decisions.
+- `MemoryManagerAgent`: runs in the background after completed sessions and self-play experiments, compares new findings with existing memory, merges duplicates, promotes repeated temporary memories, rejects stale temporary memories, and archives unsupported accepted leaks.
 
-Long-term memories are not automatically promoted into accepted user profile entries. The system creates `candidate` memories first. A user or API call must accept them before they are injected into future decision context.
+Decision prompts only read `accepted` long-term memories by default. Low-confidence findings are stored as `temporary`; repeated evidence can promote them to `candidate` or `accepted`, while rejected or stale findings are kept out of future prompts. This keeps the profile useful without allowing one noisy hand to permanently change the user's profile.
 
 All memory and strategy context is wrapped in XML-style fences such as `<user-memory-context>` and `<strategy-context>` and explicitly marked as recalled context, not user instructions.
+
+Memory governance APIs:
+
+```text
+GET  /memory/profile
+GET  /memory/temporary
+POST /memory/temporary/{memory_id}/promote
+POST /memory/temporary/{memory_id}/reject
+POST /sessions/{session_id}/memory-agent/run
+GET  /sessions/{session_id}/memory-agent/report
+```
 
 ## StrategyRAG
 
@@ -333,6 +350,7 @@ The system benchmark runs repeatable self-play variants:
 Metrics include:
 
 - self-play summary metrics
+- memory governance summary from the post-experiment `MemoryManagerAgent`
 - trace coverage
 - strategy trace coverage
 - memory trace coverage
@@ -356,7 +374,9 @@ Generated runtime data is stored locally:
 data/history/hand_history_{session_id}.jsonl
 data/traces/decision_trace_{session_id}.jsonl
 data/memory/user_profile_default_user.json
+data/memory/temporary_memory_default_user.json
 data/memory/session_summary_{session_id}.json
+data/memory/memory_agent_report_{session_id}.json
 data/memory/strategy_chunks.json
 data/reports/self_play_{experiment_id}.json
 data/reports/self_play_{experiment_id}.md
@@ -389,21 +409,14 @@ Current coverage includes:
 - hand history and decision trace persistence
 - LLM action parsing and fallback
 - memory profile candidate accept/reject/search
+- temporary memory promotion/rejection
+- background MemoryManagerAgent governance
 - StrategyRAG explainable retrieval
 - memory consolidation guardrails
 - self-play report generation
+- self-play memory-agent hook
 - RAG evaluation metrics
 - system evaluation reports
-
-## Open-Source Notes
-
-Before publishing:
-
-- Do not commit `.env` or runtime data under `data/`.
-- Keep `POKER_LLM_ENABLED=false` by default.
-- Keep API keys outside YAML configs and source files.
-- Verify Docker with `docker compose up --build`.
-- Run `pytest -q` and `npm run build`.
 
 ## Roadmap
 

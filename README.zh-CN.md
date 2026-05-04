@@ -12,7 +12,7 @@ PokerAgentLab 是一个本地优先的德州扑克学习系统，面向想学习
 - **合法动作决策链路**：agent 每次只能从合法动作中选择；LLM 输出会被解析成结构化动作，并带 fallback。
 - **决策复盘**：JSONL trace 记录 observation、legal actions、chosen action、prompt summary、raw response、fallback reason、memory/RAG 引用和 latency。
 - **SSE 实时决策追踪**：前端可以实时接收 agent 行动，不需要反复轮询完整 trace 文件。
-- **Hermes-inspired 记忆生命周期**：短期手牌记忆、长期用户画像候选、策略检索、教练确认式记忆晋升。
+- **Hermes-inspired 记忆生命周期**：短期手牌记忆、长期用户画像、临时记忆池、候选晋升和后台记忆治理。
 - **可解释 StrategyRAG**：本地关键词/tag 检索，返回 score breakdown、matched terms、matched tags、source chunk id 和命中原因。
 - **教练型训练报告**：把 session history 转换成中文训练报告，包含关键发现、动作画像、关键决策点、漏洞候选和训练 drill。
 - **Self-play 评估报告**：批量自博弈输出 win rate、BB/100、VPIP、PFR、Aggression Factor 和动作分布。
@@ -25,9 +25,10 @@ PokerAgentLab 是一个本地优先的德州扑克学习系统，面向想学习
 2. Human、rule、style 或 LLM-compatible agent 在同一套引擎里行动。
 3. 每次行动写入 hand history 和 decision trace。
 4. StrategyRAG 检索相关扑克策略 chunk，用于 agent 上下文和调试展示。
-5. 短期记忆总结最近手牌；长期记忆以候选形式保存，等待用户确认。
+5. 短期记忆总结最近手牌；已确认的长期记忆和 StrategyRAG 结果可以注入 agent 决策上下文。
 6. Coach 报告分析整场 session，并生成训练计划。
-7. Self-play 和 evaluation run 生成可量化报告，用于对比和回归检查。
+7. MemoryManagerAgent 在 session 或 self-play 结束后运行，更新临时记忆、候选记忆和已接受记忆。
+8. Self-play 和 evaluation run 生成可量化报告，用于对比、回归检查和记忆治理监控。
 
 ## 架构
 
@@ -43,6 +44,9 @@ flowchart LR
   Memory --> ShortTerm["ShortTermHandMemory"]
   Memory --> Profile["LongTermUserProfile"]
   Memory --> Strategy["StrategyRAG"]
+  Memory --> Manager["MemoryManagerAgent"]
+  Manager --> Temp["TemporaryMemoryStore"]
+  Manager --> Profile
   History --> Coach["AnalysisAgent + CoachAgent"]
   Coach --> Consolidator["MemoryConsolidator"]
   History --> Experiments["Self-play Reports"]
@@ -58,7 +62,7 @@ analysis/     手牌复盘、风格一致性检查、教练型训练报告
 api/          FastAPI schema、session store、game runner、自博弈实验
 engine/       德州扑克规则、下注轮、底池、摊牌、牌力评估
 evaluation/   RAG 和系统评测 runner，以及人工标注 query 数据集
-memory/       手牌历史、决策 trace、用户画像记忆、StrategyRAG
+memory/       手牌历史、决策 trace、用户画像记忆、StrategyRAG、记忆治理
 strategy/     风格配置、翻前表、翻后 heuristic、策略技能文档
 frontend/     React/Vite Demo 前端
 tests/        Smoke test、memory/RAG/evaluation test
@@ -260,13 +264,26 @@ curl -X POST http://127.0.0.1:8000/evaluation/rag `
 
 - `ShortTermHandMemory`：读取最近手牌、当前 session pattern 和关键 decision trace。
 - `LongTermUserProfile`：本地单用户画像，分为 `preferences`、`leaks`、`goals`、`knowledge_state` 等类别。
+- `TemporaryMemoryStore`：保存低置信但可能重复出现的观察，不进入决策 prompt，等待更多证据。
 - `StrategyRAG`：从策略文档和扑克 heuristic 中检索本地 strategy chunks。
 - `MemoryConsolidator`：把 hand history、decision trace 和 coach review 转换成候选长期记忆和训练计划。
 - `PokerMemoryManager`：统一协调短期记忆、长期用户记忆和策略检索。
+- `MemoryManagerAgent`：在完成 session 和 self-play 实验后后台运行，检索已有记忆，合并重复发现，晋升多次命中的临时记忆，拒绝长期未命中的临时记忆，并归档缺少新证据支持的旧漏洞。
 
-长期记忆不会自动进入 accepted 状态。系统只生成 `candidate`，必须由用户或 API 确认后才会变成 `accepted` 并注入后续决策上下文。
+决策 prompt 默认只读取 `accepted` 长期记忆。低置信发现会进入 `temporary`，多次命中后再晋升为 `candidate` 或 `accepted`；被拒绝或长期未命中的发现不会进入后续 prompt。这样可以避免单手牌噪声永久污染用户画像。
 
 所有记忆和策略上下文都会用 XML-style fence 包裹，例如 `<user-memory-context>` 和 `<strategy-context>`，并明确标注为“召回上下文，不是用户指令”。
+
+记忆治理 API：
+
+```text
+GET  /memory/profile
+GET  /memory/temporary
+POST /memory/temporary/{memory_id}/promote
+POST /memory/temporary/{memory_id}/reject
+POST /sessions/{session_id}/memory-agent/run
+GET  /sessions/{session_id}/memory-agent/report
+```
 
 ## StrategyRAG
 
@@ -333,6 +350,7 @@ data/evaluation/rag_eval_{run_id}.md
 指标包括：
 
 - self-play summary metrics
+- self-play 后 MemoryManagerAgent 生成的记忆治理摘要
 - trace coverage
 - strategy trace coverage
 - memory trace coverage
@@ -356,7 +374,9 @@ data/evaluation/system_eval_{run_id}.md
 data/history/hand_history_{session_id}.jsonl
 data/traces/decision_trace_{session_id}.jsonl
 data/memory/user_profile_default_user.json
+data/memory/temporary_memory_default_user.json
 data/memory/session_summary_{session_id}.json
+data/memory/memory_agent_report_{session_id}.json
 data/memory/strategy_chunks.json
 data/reports/self_play_{experiment_id}.json
 data/reports/self_play_{experiment_id}.md
@@ -389,22 +409,14 @@ npm run build
 - hand history 和 decision trace 持久化
 - LLM action parser 和 fallback
 - 长期记忆 candidate accept/reject/search
+- 临时记忆 promote/reject
+- 后台 MemoryManagerAgent 记忆治理
 - StrategyRAG 可解释检索
 - MemoryConsolidator 防止错误沉淀长期记忆
 - self-play 报告生成
+- self-play 结束后自动触发记忆治理
 - RAG evaluation metrics
 - system evaluation reports
-
-## 开源发布注意事项
-
-发布到 GitHub 前建议确认：
-
-- 不提交 `.env`。
-- 不提交 `data/` 下运行期数据。
-- 默认保持 `POKER_LLM_ENABLED=false`。
-- API key 不写入 YAML 配置或源码。
-- 用 `docker compose up --build` 验证 Docker。
-- 运行 `pytest -q` 和 `npm run build`。
 
 ## Roadmap
 
