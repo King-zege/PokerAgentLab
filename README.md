@@ -2,15 +2,15 @@
 
 [中文 README](README.zh-CN.md)
 
-PokerAgentLab is a local-first multi-agent Texas Hold'em training, observability, memory, strategy retrieval, and evaluation platform. It turns a poker game engine into an agent development lab: agents play hands, record decision traces, retrieve strategy knowledge, consolidate user memories, generate coach reports, and run repeatable evaluation benchmarks.
+PokerAgentLab is a local-first Texas Hold'em learning system for poker players who want to study GTO-inspired strategy, review hands, and practice against configurable agents. It combines a playable poker table, strategy retrieval, training reports, self-play experiments, and evaluation tools in one local application.
 
-The project is designed as an open-source portfolio project for agent engineering roles. It focuses on the parts that matter in real agent systems: bounded action spaces, tool-style parsing, graceful fallback, traceability, memory lifecycle, RAG explainability, and measurable evaluation.
+The goal is practical study: play hands, inspect why decisions were made, retrieve relevant strategy notes, track recurring leaks, and turn each session into a training plan.
 
 ## Highlights
 
-- **Multi-agent poker runtime**: human, rule-based, style-based, and LLM-compatible agents share one Texas Hold'em engine.
-- **Constrained decision loop**: every agent decision is limited by legal poker actions; LLM output is parsed into structured actions with fallback.
-- **Decision observability**: JSONL traces record observation, legal actions, chosen action, prompt summary, raw response, fallback reason, memory/RAG references, and latency.
+- **Playable poker training table**: human, rule-based, style-based, and LLM-compatible agents share one Texas Hold'em engine.
+- **Legal-action decision loop**: every agent decision is limited by valid poker actions; LLM output is parsed into structured actions with fallback.
+- **Decision review**: JSONL traces record observation, legal actions, chosen action, prompt summary, raw response, fallback reason, memory/RAG references, and latency.
 - **SSE trace streaming**: the frontend can receive live agent decisions without polling full trace files.
 - **Hermes-inspired memory lifecycle**: short-term hand memory, long-term user profile candidates, strategy retrieval, and coach-confirmed memory promotion.
 - **Explainable StrategyRAG**: local keyword/tag retrieval with score breakdown, matched terms, matched tags, source chunk IDs, and retrieval reasons.
@@ -27,7 +27,7 @@ The project is designed as an open-source portfolio project for agent engineerin
 4. StrategyRAG retrieves relevant poker strategy chunks for agent context and debugging.
 5. Short-term memory summarizes recent hands; long-term user memories are stored as coach-confirmed candidates.
 6. Coach reports analyze the session and generate a training plan.
-7. Self-play and evaluation jobs produce measurable reports for comparison and regression checks.
+7. Self-play and evaluation runs produce measurable reports for comparison and regression checks.
 
 ## Architecture
 
@@ -292,7 +292,7 @@ Each returned chunk includes:
 - `score_breakdown`
 - `reason`
 
-This makes retrieval behavior easy to inspect in traces, APIs, tests, and interviews.
+This makes retrieval behavior easy to inspect in traces, APIs, tests, and training reviews.
 
 ## Evaluation
 
