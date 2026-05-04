@@ -12,10 +12,10 @@ from typing import Any, Literal
 from uuid import uuid4
 
 MemoryCategory = Literal["preferences", "leaks", "goals", "knowledge_state"]
-MemoryStatus = Literal["candidate", "accepted", "rejected", "archived"]
+MemoryStatus = Literal["temporary", "candidate", "accepted", "rejected", "archived"]
 
 VALID_CATEGORIES = {"preferences", "leaks", "goals", "knowledge_state"}
-VALID_STATUSES = {"candidate", "accepted", "rejected", "archived"}
+VALID_STATUSES = {"temporary", "candidate", "accepted", "rejected", "archived"}
 CONTEXT_RE = re.compile(
     r"<(?:user-memory-context|strategy-context|short-term-hand-context)>.*?</(?:user-memory-context|strategy-context|short-term-hand-context)>",
     re.DOTALL,
@@ -70,6 +70,14 @@ class LongTermUserProfile:
             "accepted_by_category": accepted_by_category,
             "training_goals": [m.content for m in memories if m.status == "accepted" and m.category == "goals"],
             "leaks": [m.content for m in memories if m.status == "accepted" and m.category == "leaks"],
+            "governance_summary": {
+                "total_memories": len(memories),
+                "accepted_count": sum(1 for m in memories if m.status == "accepted"),
+                "candidate_count": sum(1 for m in memories if m.status == "candidate"),
+                "temporary_count": sum(1 for m in memories if m.status == "temporary"),
+                "rejected_count": sum(1 for m in memories if m.status == "rejected"),
+                "archived_count": sum(1 for m in memories if m.status == "archived"),
+            },
         }
 
     def add_candidate(
@@ -107,17 +115,101 @@ class LongTermUserProfile:
         evidence_session_ids: list[str] | None = None,
         confidence: float = 0.5,
     ) -> UserMemory:
+        return self.upsert_memory(category, content, evidence_session_ids, confidence, status="candidate")
+
+    def upsert_memory(
+        self,
+        category: str,
+        content: str,
+        evidence_session_ids: list[str] | None = None,
+        confidence: float = 0.5,
+        status: str = "candidate",
+        similarity_threshold: float = 0.62,
+    ) -> UserMemory:
+        if status not in VALID_STATUSES:
+            raise ValueError(f"Invalid memory status: {status}")
+        if category not in VALID_CATEGORIES:
+            raise ValueError(f"Invalid memory category: {category}")
         cleaned = self._clean_content(content)
+        if not cleaned:
+            raise ValueError("Memory content cannot be empty")
         normalized = cleaned.lower()
         memories = self._load()
+        best_match: UserMemory | None = None
+        best_score = 0.0
         for memory in memories:
-            if memory.category == category and memory.content.lower() == normalized and memory.status != "rejected":
+            if memory.category != category:
+                continue
+            if memory.status == "rejected" and memory.content.lower() == normalized:
+                return memory
+            score = self._similarity(memory.content, cleaned)
+            if score > best_score:
+                best_match = memory
+                best_score = score
+            if memory.content.lower() == normalized and memory.status != "rejected":
                 memory.evidence_session_ids = sorted(set(memory.evidence_session_ids + (evidence_session_ids or [])))
                 memory.confidence = max(memory.confidence, max(0.0, min(1.0, confidence)))
+                if memory.status in {"temporary", "candidate"} and status == "accepted":
+                    memory.status = "accepted"
+                elif memory.status == "temporary" and status == "candidate":
+                    memory.status = "candidate"
                 memory.updated_at = datetime.now().isoformat()
                 self._save(memories)
                 return memory
-        return self.add_candidate(category, cleaned, evidence_session_ids, confidence)
+        if best_match and best_match.status != "rejected" and best_score >= similarity_threshold:
+            best_match.evidence_session_ids = sorted(set(best_match.evidence_session_ids + (evidence_session_ids or [])))
+            best_match.confidence = max(best_match.confidence, max(0.0, min(1.0, confidence)))
+            if status == "accepted" and best_match.status in {"temporary", "candidate"}:
+                best_match.status = "accepted"
+            elif status == "candidate" and best_match.status == "temporary":
+                best_match.status = "candidate"
+            best_match.updated_at = datetime.now().isoformat()
+            self._save(memories)
+            return best_match
+        if status == "candidate":
+            return self.add_candidate(category, cleaned, evidence_session_ids, confidence)
+        now = datetime.now().isoformat()
+        memory = UserMemory(
+            id=f"mem_{uuid4().hex[:12]}",
+            category=category,  # type: ignore[arg-type]
+            content=cleaned,
+            evidence_session_ids=evidence_session_ids or [],
+            confidence=max(0.0, min(1.0, confidence)),
+            created_at=now,
+            updated_at=now,
+            status=status,  # type: ignore[arg-type]
+        )
+        memories.append(memory)
+        self._save(memories)
+        return memory
+
+    def archive_memory(self, memory_id: str) -> UserMemory | None:
+        return self.set_status(memory_id, "archived")
+
+    def decay_unsupported_memories(
+        self,
+        observed_contents: list[str],
+        archive_below: float = 0.55,
+        decay: float = 0.05,
+        category: str | None = "leaks",
+    ) -> list[dict[str, Any]]:
+        memories = self._load()
+        changed: list[dict[str, Any]] = []
+        for memory in memories:
+            if memory.status != "accepted":
+                continue
+            if category and memory.category != category:
+                continue
+            if any(self._similarity(memory.content, observed) >= 0.62 for observed in observed_contents):
+                continue
+            memory.confidence = max(0.0, round(memory.confidence - decay, 4))
+            memory.updated_at = datetime.now().isoformat()
+            if memory.confidence < archive_below:
+                memory.status = "archived"
+            changed.append(memory.to_dict())
+        if changed:
+            self._save(memories)
+        return changed
 
     def set_status(self, memory_id: str, status: str) -> UserMemory | None:
         if status not in VALID_STATUSES:
@@ -187,3 +279,10 @@ class LongTermUserProfile:
     def _clean_content(self, content: str) -> str:
         cleaned = CONTEXT_RE.sub("", content)
         return " ".join(cleaned.strip().split())
+
+    def _similarity(self, left: str, right: str) -> float:
+        left_terms = {t for t in re.split(r"\W+", left.lower()) if len(t) > 2}
+        right_terms = {t for t in re.split(r"\W+", right.lower()) if len(t) > 2}
+        if not left_terms or not right_terms:
+            return 0.0
+        return len(left_terms & right_terms) / len(left_terms | right_terms)

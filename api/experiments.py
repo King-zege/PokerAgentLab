@@ -12,6 +12,7 @@ from typing import Any
 import yaml
 
 from engine.game import Game
+from memory.memory_manager_agent import MemoryManagerAgent
 
 
 DEFAULT_SELF_PLAYERS = [
@@ -56,6 +57,12 @@ def run_self_play_experiment(
     game.play_session(num_hands=num_hands, interactive=False)
     histories = game.history_store.load_all()
     summary = _summarize(histories, experiment_config["players"])
+    memory_agent_report = MemoryManagerAgent().run_session(
+        experiment_id,
+        histories=histories,
+        focus_player_id=None,
+        force=True,
+    )
 
     report_path = reports_dir / f"self_play_{experiment_id}.json"
     markdown_path = reports_dir / f"self_play_{experiment_id}.md"
@@ -65,6 +72,8 @@ def run_self_play_experiment(
         "seed": seed,
         "players": experiment_config["players"],
         "summary": summary,
+        "memory_agent_report_path": memory_agent_report.get("report_path"),
+        "memory_agent_summary": memory_agent_report.get("governance_summary", {}),
     }
     report_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     markdown_path.write_text(_to_markdown(report), encoding="utf-8")
@@ -76,6 +85,8 @@ def run_self_play_experiment(
         "report_path": str(report_path),
         "markdown_path": str(markdown_path),
         "summary": summary,
+        "memory_agent_report_path": memory_agent_report.get("report_path"),
+        "memory_agent_summary": memory_agent_report.get("governance_summary", {}),
     }
 
 
@@ -160,6 +171,7 @@ def _to_markdown(report: dict[str, Any]) -> str:
         "",
         f"- Hands: {report['num_hands']}",
         f"- Seed: {report['seed']}",
+        f"- Memory Agent Report: {report.get('memory_agent_report_path') or 'not generated'}",
         "",
         "| Player | Win Rate | Profit BB | BB/100 | VPIP | PFR | AF |",
         "|---|---:|---:|---:|---:|---:|---:|",

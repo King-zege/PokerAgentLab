@@ -28,7 +28,7 @@ VARIANT_ENV = {
 
 def run_system_evaluation(
     config_path: str = "config/game_config.yaml",
-    num_hands: int = 5,
+    num_hands: int = 20,
     seed: int | None = 42,
     variants: list[str] | None = None,
     run_id: str | None = None,

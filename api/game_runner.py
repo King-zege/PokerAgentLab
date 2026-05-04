@@ -9,6 +9,7 @@ from typing import Dict
 from engine.game import Game
 from api.agents.async_human_agent import QueueHumanAgent
 from api.session import session_store
+from memory.memory_manager_agent import run_memory_agent_async
 
 
 def _is_showdown_result(result) -> bool:
@@ -169,6 +170,7 @@ class GameRunner:
 
             self.state.status = "completed"
             session_store.update_progress(self.session_id, status="completed")
+            run_memory_agent_async(self.session_id, focus_player_id=self.human_id)
 
         except Exception as e:
             import traceback
@@ -206,6 +208,7 @@ class GameRunner:
         self.control_queue.put({"type": "end"})
         self.stop_event.set()
         session_store.update_progress(self.session_id, status="completed")
+        run_memory_agent_async(self.session_id, focus_player_id=self.human_id)
 
     def get_state(self) -> dict:
         """Get current game state for API response."""

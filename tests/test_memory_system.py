@@ -6,7 +6,10 @@ import main_api
 from agent.observation import Observation
 from engine.card import Card, Rank, Suit
 from memory.consolidator import MemoryConsolidator
+from memory.hand_history import ActionRecord, HandHistory
+from memory.memory_manager_agent import MemoryManagerAgent
 from memory.strategy_rag import StrategyRAG
+from memory.temporary_memory import TemporaryMemoryStore
 from memory.user_profile import LongTermUserProfile
 from evaluation.rag_eval import compute_retrieval_metrics, load_rag_dataset, run_rag_evaluation
 from evaluation.system_eval import run_system_evaluation
@@ -16,6 +19,38 @@ def _test_path(name: str) -> str:
     path = Path("data/test_memory") / f"{name}_{uuid4().hex}.json"
     path.parent.mkdir(parents=True, exist_ok=True)
     return str(path)
+
+
+def _history_with_actions(session_id: str, actions: list[str]) -> HandHistory:
+    records = [
+        ActionRecord(
+            street="river",
+            seat_index=0,
+            player_id="Hero",
+            action=action,
+            action_amount=1.0,
+            stack_before_bb=100.0,
+            pot_before_bb=10.0,
+            explanation="pytest",
+            position_name="BTN",
+            style="human",
+        )
+        for action in actions
+    ]
+    return HandHistory(
+        hand_id=f"{session_id}_h1",
+        timestamp="2026-01-01T00:00:00",
+        table_size=2,
+        button_index=0,
+        small_blind_bb=0.5,
+        big_blind_bb=1.0,
+        players=[{"id": "Hero", "style": "human", "stack_bb": 100}],
+        hole_cards={"Hero": ["As", "Ah"]},
+        community_cards=["2c", "7d", "9h", "Ts", "Kd"],
+        actions=records,
+        pots=[],
+        final_stacks={"Hero": 100.0},
+    )
 
 
 def test_long_term_profile_candidate_accept_search():
@@ -28,6 +63,18 @@ def test_long_term_profile_candidate_accept_search():
     assert accepted is not None
     hits = profile.search("river", status="accepted")
     assert hits and hits[0]["id"] == memory.id
+
+
+def test_long_term_profile_rejected_memory_is_not_reactivated():
+    profile = LongTermUserProfile(user_id="pytest", filepath=_test_path("profile"))
+    memory = profile.add_candidate("leaks", "User over-calls river spots", ["s1"], 0.7)
+    profile.set_status(memory.id, "rejected")
+
+    updated = profile.upsert_memory("leaks", "User over-calls river spots", ["s2"], 0.9, status="accepted")
+
+    assert updated.id == memory.id
+    assert updated.status == "rejected"
+    assert profile.search("river", status="accepted") == []
 
 
 def test_strategy_rag_returns_source_and_chunk_id():
@@ -149,6 +196,96 @@ def test_consolidator_does_not_promote_empty_single_hand():
 
     assert result["candidate_memories"] == []
     assert result["training_plan"]
+
+
+def test_memory_manager_agent_auto_accepts_high_confidence_repeated_leak():
+    profile = LongTermUserProfile(user_id="pytest", filepath=_test_path("profile"))
+    temp = TemporaryMemoryStore(user_id="pytest", filepath=_test_path("temporary"))
+    agent = MemoryManagerAgent(profile, temp, auto_accept_threshold=0.82)
+
+    report = agent.run_session(
+        "pytest_memory_agent_high",
+        histories=[_history_with_actions("high", ["call", "call", "call", "call"])],
+        coach_result={"leak_candidates": []},
+        focus_player_id="Hero",
+        force=True,
+    )
+
+    assert any(action["type"] == "accepted" for action in report["actions"])
+    accepted = profile.list_memories(status="accepted")
+    assert accepted
+    assert "calling tendency" in accepted[0].content
+
+
+def test_memory_manager_agent_stores_low_confidence_goal_as_temporary():
+    profile = LongTermUserProfile(user_id="pytest", filepath=_test_path("profile"))
+    temp = TemporaryMemoryStore(user_id="pytest", filepath=_test_path("temporary"))
+    agent = MemoryManagerAgent(profile, temp, promote_hits=3)
+
+    report = agent.run_session(
+        "pytest_memory_agent_temp",
+        histories=[_history_with_actions("temp", ["check"])],
+        coach_result={"leak_candidates": []},
+        focus_player_id="Hero",
+        force=True,
+    )
+
+    assert any(action["type"] == "temporary" for action in report["actions"])
+    assert temp.list_memories(status="temporary")
+    assert profile.list_memories(status="accepted") == []
+
+
+def test_temporary_memory_promotes_after_repeated_hits():
+    profile = LongTermUserProfile(user_id="pytest", filepath=_test_path("profile"))
+    temp = TemporaryMemoryStore(user_id="pytest", filepath=_test_path("temporary"))
+    agent = MemoryManagerAgent(profile, temp, promote_hits=2)
+
+    for session_id in ("pytest_promote_1", "pytest_promote_2"):
+        agent.run_session(
+            session_id,
+            histories=[_history_with_actions(session_id, ["check"])],
+            coach_result={"leak_candidates": []},
+            focus_player_id="Hero",
+            force=True,
+        )
+
+    assert temp.list_memories(status="promoted")
+    assert profile.list_memories(status="candidate")
+
+
+def test_temporary_memory_rejects_after_misses_and_handles_broken_file():
+    path = Path(_test_path("temporary"))
+    temp = TemporaryMemoryStore(user_id="pytest", filepath=str(path))
+    memory = temp.upsert("leaks", "User calls too much on river", ["s1"], 0.6)
+
+    updates = temp.mark_misses(["unrelated finding"], archive_misses=1)
+
+    assert updates
+    assert temp.get(memory.id).status == "rejected"
+
+    path.write_text("{broken json", encoding="utf-8")
+    broken = TemporaryMemoryStore(user_id="pytest", filepath=str(path))
+    assert broken.list_memories() == []
+    assert "temporary memory unavailable" in broken.last_fallback_reason
+
+
+def test_memory_manager_agent_archives_stale_accepted_memory():
+    profile = LongTermUserProfile(user_id="pytest", filepath=_test_path("profile"))
+    temp = TemporaryMemoryStore(user_id="pytest", filepath=_test_path("temporary"))
+    stale = profile.upsert_memory("leaks", "User over-calls river spots", ["old"], 0.56, status="accepted")
+    agent = MemoryManagerAgent(profile, temp, temporary_threshold=0.55)
+
+    report = agent.run_session(
+        "pytest_stale_archive",
+        histories=[_history_with_actions("stale", ["check"])],
+        coach_result={"leak_candidates": []},
+        focus_player_id="Hero",
+        force=True,
+    )
+
+    assert report["archived_memories"]
+    archived = profile.list_memories(status="archived")
+    assert archived and archived[0].id == stale.id
 
 
 def test_memory_api_profile_and_strategy_search():

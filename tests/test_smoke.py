@@ -2,6 +2,8 @@
 from types import SimpleNamespace
 from uuid import uuid4
 
+from pathlib import Path
+
 from fastapi.testclient import TestClient
 
 import main_api
@@ -17,6 +19,7 @@ from analysis.analysis_agent import AnalysisAgent
 from strategy.style_profile import StyleRegistry
 from memory.hand_history import ActionRecord, HandHistory
 from memory.decision_trace import DecisionTrace, DecisionTraceStore
+from memory.temporary_memory import TemporaryMemoryStore
 
 
 def test_non_interactive_session_generates_history_and_traces():
@@ -346,6 +349,9 @@ def test_self_play_api_generates_report_with_action_distribution():
     assert payload["num_hands"] == 2
     assert payload["seed"] == 7
     assert payload["summary"]
+    assert payload["memory_agent_report_path"]
+    assert Path(payload["memory_agent_report_path"]).exists()
+    assert "temporary_count" in payload["memory_agent_summary"]
 
     first_player = next(iter(payload["summary"].values()))
     assert "bb_per_100" in first_player
@@ -387,4 +393,40 @@ def test_evaluation_api_generates_rag_and_system_reports():
     assert system_payload["variants"][0]["trace_metrics"]["total_actions"] >= 0
 
     missing = client.get("/evaluation/rag/not_a_real_eval")
+    assert missing.status_code == 404
+
+
+def test_memory_agent_api_and_temporary_memory_endpoints():
+    client = TestClient(main_api.app)
+    session_id = f"pytest_memory_agent_api_{uuid4().hex[:8]}"
+    game = Game("config/game_config.yaml", session_id=session_id)
+    main_api.session_store.create(session_id, game, mode="fixed", num_hands=1)
+    main_api.session_store.update_status(session_id, "completed")
+
+    run_response = client.post(f"/sessions/{session_id}/memory-agent/run", json={"force": True})
+    assert run_response.status_code == 200
+    payload = run_response.json()
+    assert payload["session_id"] == session_id
+    assert "governance_summary" in payload
+
+    report_response = client.get(f"/sessions/{session_id}/memory-agent/report")
+    assert report_response.status_code == 200
+    assert report_response.json()["session_id"] == session_id
+
+    temp_response = client.get("/memory/temporary")
+    assert temp_response.status_code == 200
+    temp_payload = temp_response.json()
+    assert "memories" in temp_payload
+
+    created_temp = TemporaryMemoryStore().upsert("goals", f"pytest temporary drill {uuid4().hex}", [session_id], 0.6)
+    promote_response = client.post(f"/memory/temporary/{created_temp.id}/promote?status=candidate")
+    assert promote_response.status_code == 200
+    assert promote_response.json()["long_term_memory"]["status"] == "candidate"
+
+    rejected_temp = TemporaryMemoryStore().upsert("goals", f"pytest rejected temporary drill {uuid4().hex}", [session_id], 0.6)
+    reject_response = client.post(f"/memory/temporary/{rejected_temp.id}/reject")
+    assert reject_response.status_code == 200
+    assert reject_response.json()["memory"]["status"] == "rejected"
+
+    missing = client.get("/sessions/not_real/memory-agent/report")
     assert missing.status_code == 404

@@ -27,6 +27,7 @@ from api.models import (
     StrategySearchRequest, MemoryProfileResponse, MemorySearchResponse,
     StrategySearchResponse, ConsolidateResponse, MemoryContextResponse,
     RagEvaluationRequest, SystemEvaluationRequest, EvaluationReportResponse,
+    MemoryAgentRunRequest, TemporaryMemoryResponse, MemoryAgentReportResponse,
 )
 from api.session import session_store, GameSession
 from api.game_runner import get_runner, create_runner, remove_runner
@@ -37,6 +38,8 @@ from memory.user_profile import LongTermUserProfile
 from memory.strategy_rag import StrategyRAG
 from memory.poker_memory_manager import PokerMemoryManager
 from memory.consolidator import MemoryConsolidator
+from memory.memory_manager_agent import MemoryManagerAgent
+from memory.temporary_memory import TemporaryMemoryStore
 from analysis.analysis_agent import AnalysisAgent
 from analysis.coach_agent import CoachAgent
 from strategy.style_profile import StyleRegistry
@@ -724,7 +727,11 @@ def coach_session(session_id: str):
 @app.get("/memory/profile", response_model=MemoryProfileResponse, tags=["Memory"])
 def get_memory_profile():
     """Return the local long-term user profile."""
-    return MemoryProfileResponse(**LongTermUserProfile().profile_summary())
+    profile = LongTermUserProfile()
+    summary = profile.profile_summary()
+    temporary_count = len(TemporaryMemoryStore(user_id=profile.user_id).list_memories(status="temporary"))
+    summary.setdefault("governance_summary", {})["temporary_pool_count"] = temporary_count
+    return MemoryProfileResponse(**summary)
 
 
 @app.get("/memory/profile/candidates", response_model=MemorySearchResponse, tags=["Memory"])
@@ -759,6 +766,35 @@ def search_memory(req: MemorySearchRequest):
     return MemorySearchResponse(query=req.query, total=len(memories), memories=memories)
 
 
+@app.get("/memory/temporary", response_model=TemporaryMemoryResponse, tags=["Memory"])
+def get_temporary_memories():
+    """Return low-confidence temporary memories used for governance."""
+    store = TemporaryMemoryStore()
+    memories = [memory.to_dict() for memory in store.list_memories()]
+    return TemporaryMemoryResponse(user_id=store.user_id, total=len(memories), memories=memories)
+
+
+@app.post("/memory/temporary/{memory_id}/promote", tags=["Memory"])
+def promote_temporary_memory(memory_id: str, status: str = "candidate"):
+    """Promote a temporary memory into candidate or accepted long-term memory."""
+    try:
+        result = MemoryManagerAgent().promote_temporary(memory_id, status=status)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Temporary memory '{memory_id}' not found")
+    return {"success": True, **result}
+
+
+@app.post("/memory/temporary/{memory_id}/reject", tags=["Memory"])
+def reject_temporary_memory(memory_id: str):
+    """Reject a temporary memory so it will not be promoted."""
+    memory = MemoryManagerAgent().reject_temporary(memory_id)
+    if memory is None:
+        raise HTTPException(status_code=404, detail=f"Temporary memory '{memory_id}' not found")
+    return {"success": True, "memory": memory}
+
+
 @app.post("/strategy/search", response_model=StrategySearchResponse, tags=["Strategy"])
 def search_strategy(req: StrategySearchRequest):
     """Search local strategy chunks with source and chunk ids."""
@@ -782,6 +818,44 @@ def consolidate_session_memory(session_id: str):
     coach_result = coach.review_session(histories, focus_player_id=focus_player)
     result = MemoryConsolidator().consolidate_session(session_id, histories, coach_result, focus_player_id=focus_player)
     return ConsolidateResponse(**result)
+
+
+@app.post("/sessions/{session_id}/memory-agent/run", response_model=MemoryAgentReportResponse, tags=["Memory"])
+def run_session_memory_agent(session_id: str, req: MemoryAgentRunRequest | None = None):
+    """Manually run the background memory manager agent for a completed session."""
+    session = session_store.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    force = bool(req.force) if req else False
+    if session.status != "completed" and not force:
+        raise HTTPException(status_code=400, detail="Session is not completed yet")
+    history_store = HistoryStore(f"data/history/hand_history_{session_id}.jsonl")
+    histories = history_store.load_all()
+    styles_dir = Path(DEFAULT_CONFIG_PATH).parent / "styles"
+    registry = StyleRegistry(str(styles_dir))
+    coach = CoachAgent(AnalysisAgent(registry))
+    focus_player = _find_human_id(session.game)
+    coach_result = coach.review_session(histories, focus_player_id=focus_player)
+    report = MemoryManagerAgent().run_session(
+        session_id=session_id,
+        histories=histories,
+        coach_result=coach_result,
+        focus_player_id=focus_player,
+        force=force,
+    )
+    return MemoryAgentReportResponse(**report)
+
+
+@app.get("/sessions/{session_id}/memory-agent/report", response_model=MemoryAgentReportResponse, tags=["Memory"])
+def get_session_memory_agent_report(session_id: str):
+    """Return the memory manager agent report for a session."""
+    session = session_store.get(session_id)
+    if not session:
+        raise HTTPException(status_code=404, detail=f"Session '{session_id}' not found")
+    report = MemoryManagerAgent.load_report(session_id)
+    if report is None:
+        raise HTTPException(status_code=404, detail=f"Memory agent report for session '{session_id}' not found")
+    return MemoryAgentReportResponse(**report)
 
 
 @app.get("/sessions/{session_id}/memory-context", response_model=MemoryContextResponse, tags=["Memory"])

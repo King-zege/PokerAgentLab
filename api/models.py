@@ -50,9 +50,14 @@ class SystemEvaluationRequest(BaseModel):
     """Request for end-to-end usefulness signal evaluation."""
     run_id: str | None = Field(default=None, description="Optional evaluation run identifier")
     config_path: str = Field(default="config/game_config.yaml")
-    num_hands: int = Field(default=5, ge=1, le=1000)
+    num_hands: int = Field(default=20, ge=1, le=1000)
     seed: int | None = Field(default=42)
     variants: list[str] | None = Field(default=None)
+
+
+class MemoryAgentRunRequest(BaseModel):
+    """Request to run the background memory manager agent manually."""
+    force: bool = Field(default=False)
 
 
 # ─── Response Models ───────────────────────────────────────────────────────────
@@ -226,6 +231,8 @@ class SelfPlayResponse(BaseModel):
     report_path: str
     markdown_path: str
     summary: dict[str, Any]
+    memory_agent_report_path: str | None = None
+    memory_agent_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class CoachResponse(BaseModel):
@@ -267,12 +274,33 @@ class MemoryProfileResponse(BaseModel):
     accepted_by_category: dict[str, list[dict[str, Any]]]
     training_goals: list[str]
     leaks: list[str]
+    governance_summary: dict[str, Any] = Field(default_factory=dict)
 
 
 class MemorySearchResponse(BaseModel):
     query: str
     total: int
     memories: list[dict[str, Any]]
+
+
+class TemporaryMemoryResponse(BaseModel):
+    user_id: str
+    total: int
+    memories: list[dict[str, Any]]
+
+
+class MemoryAgentReportResponse(BaseModel):
+    session_id: str
+    created_at: str
+    enabled: bool
+    focus_player_id: str | None = None
+    findings: list[dict[str, Any]] = Field(default_factory=list)
+    actions: list[dict[str, Any]] = Field(default_factory=list)
+    temporary_updates: list[dict[str, Any]] = Field(default_factory=list)
+    archived_memories: list[dict[str, Any]] = Field(default_factory=list)
+    governance_summary: dict[str, Any] = Field(default_factory=dict)
+    fallback_reason: str = ""
+    report_path: str = ""
 
 
 class StrategySearchResponse(BaseModel):
