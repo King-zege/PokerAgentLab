@@ -90,10 +90,10 @@ export function updateMemoryCandidate(memoryId: string, action: 'accept' | 'reje
   return request(`/memory/profile/candidates/${memoryId}/${action}`, { method: 'POST' });
 }
 
-export function runSelfPlayExperiment() {
+export function runSelfPlayExperiment(numHands = 20, seed = 42) {
   return request<SelfPlayResponse>('/experiments/self-play', {
     method: 'POST',
-    body: JSON.stringify({ num_hands: 20, seed: 42 }),
+    body: JSON.stringify({ num_hands: numHands, seed }),
   });
 }
 

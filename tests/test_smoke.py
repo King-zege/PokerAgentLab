@@ -331,3 +331,30 @@ def test_llm_action_parser_falls_back_to_legal_action():
     parsed = agent._parse_action('{"a":"call"}', legal, obs)
     assert parsed == Action(ActionType.CALL)
 
+
+def test_self_play_api_generates_report_with_action_distribution():
+    client = TestClient(main_api.app)
+    experiment_id = f"pytest_selfplay_{uuid4().hex[:8]}"
+
+    response = client.post(
+        "/experiments/self-play",
+        json={"experiment_id": experiment_id, "num_hands": 2, "seed": 7},
+    )
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["experiment_id"] == experiment_id
+    assert payload["num_hands"] == 2
+    assert payload["seed"] == 7
+    assert payload["summary"]
+
+    first_player = next(iter(payload["summary"].values()))
+    assert "bb_per_100" in first_player
+    assert "vpip" in first_player
+    assert "pfr" in first_player
+    assert "aggression_factor" in first_player
+    assert "action_distribution" in first_player
+
+    report_response = client.get(f"/experiments/{experiment_id}/report")
+    assert report_response.status_code == 200
+    assert report_response.json()["experiment_id"] == experiment_id
+

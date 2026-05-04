@@ -1,20 +1,22 @@
 services:
   api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8000:8000"
     environment:
       POKER_LLM_ENABLED: "false"
+      POKER_MEMORY_ENABLED: "true"
+      POKER_STRATEGY_RAG_ENABLED: "true"
     volumes:
       - ./data:/app/data
 
   frontend:
-    image: node:20-alpine
-    working_dir: /app
-    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
     ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
+      - "5174:80"
     depends_on:
       - api

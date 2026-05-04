@@ -227,6 +227,106 @@ h2 {
   background: #d4b15f;
 }
 
+.selfPlayReport {
+  display: grid;
+  gap: 12px;
+}
+
+.selfPlayControls {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.selfPlayControls label {
+  display: grid;
+  gap: 6px;
+}
+
+.selfPlayControls span {
+  color: #aec0ba;
+  font-size: 12px;
+}
+
+.metricGrid {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.metricGrid > div {
+  border: 1px solid rgba(238, 242, 244, 0.12);
+  border-radius: 8px;
+  background: rgba(12, 20, 18, 0.5);
+  display: grid;
+  gap: 5px;
+  padding: 10px;
+}
+
+.metricGrid span {
+  color: #aec0ba;
+  font-size: 12px;
+}
+
+.metricGrid strong {
+  color: #f5e6bd;
+  font-size: 15px;
+}
+
+.selfPlayTableWrap {
+  overflow-x: auto;
+}
+
+.selfPlayTable {
+  width: 100%;
+  border-collapse: collapse;
+  color: #dbe7e3;
+  font-size: 12px;
+}
+
+.selfPlayTable th,
+.selfPlayTable td {
+  border-bottom: 1px solid #1f2937;
+  padding: 8px 6px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.selfPlayTable th:first-child,
+.selfPlayTable td:first-child {
+  color: #f5e6bd;
+  text-align: left;
+}
+
+.actionDistribution,
+.actionGroup {
+  display: grid;
+  gap: 10px;
+}
+
+.actionGroup {
+  border-top: 1px solid #1f2937;
+  padding-top: 10px;
+}
+
+.actionGroup > span {
+  color: #d4b15f;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.actionBar {
+  align-items: center;
+  display: grid;
+  gap: 8px;
+  grid-template-columns: 42px minmax(80px, 1fr) 32px;
+}
+
+.actionBar small {
+  color: #aec0ba;
+  font-size: 12px;
+}
+
 .amountControls {
   display: grid;
   gap: 8px;
@@ -373,7 +473,9 @@ pre {
   }
 
   .reportGrid,
-  .reportStats {
+  .reportStats,
+  .metricGrid,
+  .selfPlayControls {
     grid-template-columns: 1fr;
   }
 }

@@ -157,11 +157,29 @@ export type MemoryProfile = {
 
 export type MemoryContextResponse = Record<string, unknown>;
 
+export type ActionDistribution = Record<string, number>;
+
+export type SelfPlayPlayerSummary = {
+  hands: number;
+  wins: number;
+  win_rate: number;
+  profit_bb: number;
+  bb_per_100: number;
+  vpip: number;
+  pfr: number;
+  aggression_factor: number;
+  action_distribution: ActionDistribution;
+};
+
+export type SelfPlaySummary = Record<string, SelfPlayPlayerSummary>;
+
 export type SelfPlayResponse = {
   experiment_id: string;
+  num_hands: number;
+  seed?: number | null;
   report_path: string;
   markdown_path: string;
-  summary: Record<string, unknown>;
+  summary: SelfPlaySummary;
 };
 
 export type ConsolidateResponse = {

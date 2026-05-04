@@ -71,6 +71,8 @@ def run_self_play_experiment(
 
     return {
         "experiment_id": experiment_id,
+        "num_hands": len(histories),
+        "seed": seed,
         "report_path": str(report_path),
         "markdown_path": str(markdown_path),
         "summary": summary,

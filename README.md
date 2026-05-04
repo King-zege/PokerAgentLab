@@ -61,6 +61,8 @@ Open:
 http://127.0.0.1:5173
 ```
 
+The self-play panel lets you choose hand count and random seed, then renders a visual report with metric cards, a player table, and action distribution bars.
+
 ## LLM Configuration
 
 LLM play is disabled by default so the demo works without secrets.
@@ -164,8 +166,23 @@ Current smoke coverage:
 docker compose up --build
 ```
 
+On Windows you can also double-click:
+
+```text
+start_docker.bat
+```
+
+To stop the containers:
+
+```text
+stop_docker.bat
+```
+
 Backend: `http://127.0.0.1:8000`  
-Frontend: `http://127.0.0.1:5173`
+Frontend: `http://127.0.0.1:5174`  
+Health through frontend proxy: `http://127.0.0.1:5174/api/health`
+
+The Compose setup is production-style: FastAPI runs in the `api` service, while React is built into static files and served by nginx. nginx proxies `/api/*` to `api:8000`, so the browser talks to one frontend origin.
 
 ## Interview Talking Points
 

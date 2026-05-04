@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   consolidateSessionMemory,
   continueSession,
@@ -198,10 +198,10 @@ function App() {
     }
   }
 
-  async function runSelfPlay() {
+  async function runSelfPlay(selfPlayHands: number, seed: number) {
     try {
-      setMessage('正在运行自博弈实验...');
-      const data = await runSelfPlayExperiment();
+      setMessage(`正在运行自博弈实验：${selfPlayHands} 手，seed=${seed}`);
+      const data = await runSelfPlayExperiment(selfPlayHands, seed);
       setReport(data);
       setMessage(`实验 ${data.experiment_id} 已完成`);
     } catch (err) {

@@ -205,6 +205,8 @@ class TraceListResponse(BaseModel):
 
 class SelfPlayResponse(BaseModel):
     experiment_id: str
+    num_hands: int
+    seed: int | None = None
     report_path: str
     markdown_path: str
     summary: dict[str, Any]

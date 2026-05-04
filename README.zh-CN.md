@@ -1,4 +1,4 @@
-# PokerAgentLab
+﻿# PokerAgentLab
 
 PokerAgentLab 是一个多智能体德州扑克训练与评估平台。项目把 Python 德州扑克引擎、FastAPI 会话控制、LLM tool calling、决策 trace、自博弈评估、本地记忆/RAG 和 React Demo 串成一个可运行的 agent 产品。
 
@@ -54,6 +54,10 @@ http://127.0.0.1:8000/docs
 cd C:\Users\93774\Desktop\Search-R1_1\poker\frontend
 npm install
 npm run dev
+
+cd C:\Users\93774\Desktop\Search-R1_1\poker\frontend
+npm.cmd run dev -- --host 127.0.0.1 --port 5174
+
 ```
 
 打开：
@@ -189,3 +193,21 @@ npm run build
 - 如何借鉴 Hermes 的 memory lifecycle，但用本地 provider 实现可复现的求职作品。
 - 如何区分 raw hand history、session summary、long-term user profile，避免记忆污染。
 - 如何用 self-play 和 coach agent 把“会行动的 agent”升级成“会评估和训练自己的 agent”。
+
+## Self-play 可视化
+
+自博弈面板可以配置手数和 seed。运行后前端会展示 win rate、BB/100、VPIP、PFR、AF 和动作分布条形图，不再只显示 JSON 原文。
+
+
+
+## Docker 一键启动
+
+`powershell
+docker compose up --build
+` 
+
+前端访问：http://127.0.0.1:5174。健康检查：http://127.0.0.1:5174/api/health。Compose 使用生产式结构：FastAPI 在 pi service 中运行，React build 后由 nginx 承载，并把 /api/* 反代到 pi:8000。
+
+
+Windows 下也可以直接双击：start_docker.bat。停止容器可以双击：stop_docker.bat。
+

@@ -13,7 +13,7 @@ type AnalysisPanelProps = {
   onLoadAnalysis: () => void;
   onConsolidateMemory: () => void;
   onLoadMemoryContext: () => void;
-  onRunSelfPlay: () => void;
+  onRunSelfPlay: (numHands: number, seed: number) => void;
 };
 
 function ProfileBars({ items }: { items: ProfileItem[] }) {
