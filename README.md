@@ -1,4 +1,4 @@
-# PokerAgentLab
+# PokerAgentLab扑克策略学习助手
 
 [English README](README.en.md)
 
