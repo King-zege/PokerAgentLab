@@ -1,36 +1,36 @@
 # PokerAgentLab
 
-[中文 README](README.zh-CN.md)
+[English README](README.en.md)
 
-PokerAgentLab is a local-first Texas Hold'em learning system for poker players who want to study GTO-inspired strategy, review hands, and practice against configurable agents. It combines a playable poker table, strategy retrieval, training reports, self-play experiments, and evaluation tools in one local application.
+PokerAgentLab 是一个本地优先的德州扑克学习系统，面向想学习 GTO 思路、复盘手牌、训练策略决策的扑克爱好者。它把可玩的牌桌、策略检索、训练报告、自博弈实验和评测工具整合在一个本地应用里。
 
-The goal is practical study: play hands, inspect why decisions were made, retrieve relevant strategy notes, track recurring leaks, and turn each session into a training plan.
+项目目标是帮助用户在真实牌局流程中学习策略：打一手牌，查看每次决策依据，检索相关策略知识，记录长期漏洞，并把每场训练转化成下一步训练计划。
 
-## Highlights
+## 核心亮点
 
-- **Playable poker training table**: human, rule-based, style-based, and LLM-compatible agents share one Texas Hold'em engine.
-- **Legal-action decision loop**: every agent decision is limited by valid poker actions; LLM output is parsed into structured actions with fallback.
-- **Decision review**: JSONL traces record observation, legal actions, chosen action, prompt summary, raw response, fallback reason, memory/RAG references, and latency.
-- **SSE trace streaming**: the frontend can receive live agent decisions without polling full trace files.
-- **Hermes-inspired memory lifecycle**: short-term hand memory, long-term user profiles, temporary memories, candidate promotion, and background memory governance.
-- **Explainable StrategyRAG**: local keyword/tag retrieval with score breakdown, matched terms, matched tags, source chunk IDs, and retrieval reasons.
-- **Coach training reports**: session histories are converted into Chinese training reports with findings, action profile, critical spots, leaks, and drills.
-- **Self-play reports**: batch experiments output win rate, BB/100, VPIP, PFR, aggression factor, and action distribution.
-- **Evaluation framework**: RAG benchmarks report Hit@K, Precision@K, Recall@K, MRR, and latency; system benchmarks report trace and context coverage.
-- **Docker one-command demo**: FastAPI backend plus React static frontend served by nginx with `/api` reverse proxy.
+- **可玩的扑克训练牌桌**：human、rule-based、style-based、LLM-compatible agent 共用同一套德州扑克引擎。
+- **合法动作决策链路**：agent 每次只能从合法动作中选择；LLM 输出会被解析成结构化动作，并带 fallback。
+- **决策复盘**：JSONL trace 记录 observation、legal actions、chosen action、prompt summary、raw response、fallback reason、memory/RAG 引用和 latency。
+- **SSE 实时决策追踪**：前端可以实时接收 agent 行动，不需要反复轮询完整 trace 文件。
+- **Hermes-inspired 记忆生命周期**：短期手牌记忆、长期用户画像、临时记忆池、候选晋升和后台记忆治理。
+- **可解释 StrategyRAG**：本地关键词/tag 检索，返回 score breakdown、matched terms、matched tags、source chunk id 和命中原因。
+- **教练型训练报告**：把 session history 转换成中文训练报告，包含关键发现、动作画像、关键决策点、漏洞候选和训练 drill。
+- **Self-play 评估报告**：批量自博弈输出 win rate、BB/100、VPIP、PFR、Aggression Factor 和动作分布。
+- **评测体系**：RAG benchmark 输出 Hit@K、Precision@K、Recall@K、MRR 和延迟；系统 benchmark 输出 trace 和上下文覆盖率。
+- **Docker 一键 Demo**：FastAPI 后端 + React 静态前端 + nginx `/api` 反向代理。
 
-## Product Flow
+## 产品流程
 
-1. Start a poker session from the React UI or REST API.
-2. Human, rule, style, or LLM-compatible agents act inside the same engine.
-3. Each action writes a hand history record and a decision trace.
-4. StrategyRAG retrieves relevant poker strategy chunks for agent context and debugging.
-5. Short-term memory summarizes recent hands; accepted long-term memories and StrategyRAG results can be injected into agent context.
-6. Coach reports analyze the session and generate a training plan.
-7. MemoryManagerAgent runs after completed sessions or self-play experiments to update temporary, candidate, and accepted memories.
-8. Self-play and evaluation runs produce measurable reports for comparison, regression checks, and memory-governance monitoring.
+1. 通过 React UI 或 REST API 创建一局扑克 session。
+2. Human、rule、style 或 LLM-compatible agent 在同一套引擎里行动。
+3. 每次行动写入 hand history 和 decision trace。
+4. StrategyRAG 检索相关扑克策略 chunk，用于 agent 上下文和调试展示。
+5. 短期记忆总结最近手牌；已确认的长期记忆和 StrategyRAG 结果可以注入 agent 决策上下文。
+6. Coach 报告分析整场 session，并生成训练计划。
+7. MemoryManagerAgent 在 session 或 self-play 结束后运行，更新临时记忆、候选记忆和已接受记忆。
+8. Self-play 和 evaluation run 生成可量化报告，用于对比、回归检查和记忆治理监控。
 
-## Architecture
+## 架构
 
 ```mermaid
 flowchart LR
@@ -54,80 +54,80 @@ flowchart LR
   Experiments --> Evaluation
 ```
 
-### Backend Modules
+### 后端模块
 
 ```text
-agent/        Agent interfaces and human/rule/style/LLM implementations
-analysis/     Hand review, style consistency checks, coach training reports
-api/          FastAPI schemas, session store, game runner, self-play experiments
-engine/       Poker rules, betting rounds, pots, showdown, hand evaluation
-evaluation/   RAG and system evaluation runners plus labeled query dataset
-memory/       History store, decision traces, user profile memory, StrategyRAG, memory governance
-strategy/     Style profiles, preflop table, postflop heuristics, skill docs
-frontend/     React/Vite demo UI
-tests/        Smoke tests and memory/RAG/evaluation tests
+agent/        Agent 接口，以及 human/rule/style/LLM 实现
+analysis/     手牌复盘、风格一致性检查、教练型训练报告
+api/          FastAPI schema、session store、game runner、自博弈实验
+engine/       德州扑克规则、下注轮、底池、摊牌、牌力评估
+evaluation/   RAG 和系统评测 runner，以及人工标注 query 数据集
+memory/       手牌历史、决策 trace、用户画像记忆、StrategyRAG、记忆治理
+strategy/     风格配置、翻前表、翻后 heuristic、策略技能文档
+frontend/     React/Vite Demo 前端
+tests/        Smoke test、memory/RAG/evaluation test
 ```
 
-## Requirements
+## 环境依赖
 
-Backend:
+后端：
 
 - Python 3.11+
 - pip
-- Python packages in `requirements.txt`
+- `requirements.txt` 中的 Python 依赖
 
-Frontend:
+前端：
 
 - Node.js 20+
 - npm
 
-Optional:
+可选：
 
-- Docker Desktop for one-command deployment
-- LLM-compatible API key if you want real LLM decisions
+- Docker Desktop，用于一键部署
+- LLM-compatible API key，用于真实 LLM 决策
 
-## Quick Start: Docker
+## 快速启动：Docker
 
-From the repository root:
+在项目根目录运行：
 
 ```powershell
 docker compose up --build
 ```
 
-Open:
+打开：
 
 ```text
-Frontend: http://127.0.0.1:5174/
-API docs: http://127.0.0.1:8000/docs
-Health:   http://127.0.0.1:5174/api/health
+前端:     http://127.0.0.1:5174/
+API 文档: http://127.0.0.1:8000/docs
+健康检查: http://127.0.0.1:5174/api/health
 ```
 
-On Windows you can also double-click:
+Windows 下也可以双击：
 
 ```text
 start_docker.bat
 ```
 
-Stop containers:
+停止容器：
 
 ```powershell
 docker compose down
 ```
 
-or double-click:
+或双击：
 
 ```text
 stop_docker.bat
 ```
 
-Compose runs two services:
+Compose 启动两个服务：
 
-- `api`: FastAPI on container port `8000`, exposed as `127.0.0.1:8000`
-- `frontend`: React static build served by nginx on `127.0.0.1:5174`; nginx proxies `/api/*` to `api:8000`
+- `api`：FastAPI，容器端口 `8000`，暴露为 `127.0.0.1:8000`
+- `frontend`：React 静态构建，由 nginx 承载，暴露为 `127.0.0.1:5174`；nginx 把 `/api/*` 代理到 `api:8000`
 
-## Quick Start: Local Development
+## 快速启动：本地开发
 
-Backend:
+后端：
 
 ```powershell
 git clone <your-repo-url>
@@ -138,7 +138,7 @@ copy .env.example .env
 .\venv\Scripts\python.exe -m uvicorn main_api:app --reload --host 127.0.0.1 --port 8000
 ```
 
-If you use an existing Conda environment:
+如果使用已有 Conda 环境：
 
 ```powershell
 cd PokerAgentLab
@@ -146,7 +146,7 @@ C:\Users\93774\.conda\envs\hello_agents\python.exe -m pip install -r requirement
 C:\Users\93774\.conda\envs\hello_agents\python.exe -m uvicorn main_api:app --host 127.0.0.1 --port 8000
 ```
 
-Frontend:
+前端：
 
 ```powershell
 cd frontend
@@ -154,17 +154,17 @@ npm install
 npm run dev
 ```
 
-Vite defaults to:
+Vite 默认地址：
 
 ```text
 http://127.0.0.1:5173/
 ```
 
-If the port is occupied, Vite may choose another port. The Docker production frontend uses `5174`.
+如果端口被占用，Vite 会自动选择新端口。Docker 生产前端固定使用 `5174`。
 
-## Environment Variables
+## 环境变量
 
-Copy `.env.example` to `.env` and edit as needed:
+复制 `.env.example` 为 `.env`：
 
 ```env
 POKER_LLM_ENABLED=false
@@ -180,7 +180,7 @@ POKER_STRATEGY_RAG_ENABLED=true
 POKER_DECISION_USER_MEMORY_ENABLED=false
 ```
 
-Recommended player config separates implementation from poker style:
+推荐配置把 agent 实现和扑克风格分开：
 
 ```yaml
 players:
@@ -190,11 +190,11 @@ players:
     stack_bb: 100
 ```
 
-`style` is the poker personality (`balanced`, `tag`, `lag`, `nit`, etc.). `agent_type` chooses the implementation (`human`, `llm`, `rule`, or `style_fallback`). Older configs using `style: "llm"` with `llm_style: "balanced"` remain supported. When `POKER_LLM_ENABLED=false` or the API key is missing, LLM players fall back to deterministic `StyleAgent` behavior so the demo, tests, Docker deployment, and self-play remain runnable without secrets.
+`style` 表示扑克打法人格，例如 `balanced`、`tag`、`lag`、`nit`。`agent_type` 表示实现类型，例如 `human`、`llm`、`rule`、`style_fallback`。旧配置 `style: "llm" + llm_style: "balanced"` 仍然兼容。默认关闭 LLM，所以没有 API key 也能跑 demo；LLM 不可用时会 fallback 到 deterministic `StyleAgent`，避免演示、测试、Docker 部署和 self-play 被外部服务阻塞。
 
-## Core APIs
+## 核心 API
 
-Session flow:
+会话流程：
 
 ```text
 POST /sessions
@@ -206,7 +206,7 @@ POST /sessions/{session_id}/continue
 GET  /sessions/{session_id}/history
 ```
 
-Observability and analysis:
+可观测性与复盘：
 
 ```text
 GET  /sessions/{session_id}/traces
@@ -216,7 +216,7 @@ POST /sessions/{session_id}/analyze
 POST /sessions/{session_id}/coach
 ```
 
-Memory and strategy retrieval:
+记忆与策略检索：
 
 ```text
 GET  /memory/profile
@@ -229,7 +229,7 @@ POST /sessions/{session_id}/consolidate
 GET  /sessions/{session_id}/memory-context
 ```
 
-Experiments and evaluation:
+实验与评测：
 
 ```text
 POST /experiments/self-play
@@ -240,7 +240,7 @@ POST /evaluation/system
 GET  /evaluation/system/{run_id}
 ```
 
-Example session:
+创建 session 示例：
 
 ```powershell
 curl -X POST http://127.0.0.1:8000/sessions `
@@ -254,7 +254,7 @@ curl -X POST http://127.0.0.1:8000/sessions/demo1/action `
   -d "{\"action\":\"call\",\"amount\":0}"
 ```
 
-Example self-play:
+Self-play 示例：
 
 ```powershell
 curl -X POST http://127.0.0.1:8000/experiments/self-play `
@@ -262,7 +262,7 @@ curl -X POST http://127.0.0.1:8000/experiments/self-play `
   -d "{\"num_hands\":100,\"seed\":42}"
 ```
 
-Example RAG evaluation:
+RAG 评测示例：
 
 ```powershell
 curl -X POST http://127.0.0.1:8000/evaluation/rag `
@@ -270,23 +270,23 @@ curl -X POST http://127.0.0.1:8000/evaluation/rag `
   -d "{\"top_k\":3}"
 ```
 
-## Memory System
+## 记忆系统
 
-The memory layer is local-first and auditable.
+记忆层是本地优先、可审计的。
 
-- `ShortTermHandMemory`: reads recent hand histories, current session patterns, and key decision traces.
-- `LongTermUserProfile`: stores local single-user profile memories in categories such as `preferences`, `leaks`, `goals`, and `knowledge_state`.
-- `TemporaryMemoryStore`: keeps low-confidence recurring observations outside the decision prompt until there is enough repeated evidence.
-- `StrategyRAG`: retrieves local strategy chunks from strategy docs and poker heuristics.
-- `MemoryConsolidator`: turns hand history, traces, and coach review into candidate long-term memories and training plans.
-- `PokerMemoryManager`: builds separate decision and coach contexts.
-- `MemoryManagerAgent`: runs in the background after completed sessions and self-play experiments, compares new findings with existing memory, merges duplicates, promotes repeated temporary memories, rejects stale temporary memories, and archives unsupported accepted leaks.
+- `ShortTermHandMemory`：读取最近手牌、当前 session pattern 和关键 decision trace。
+- `LongTermUserProfile`：本地单用户画像，分为 `preferences`、`leaks`、`goals`、`knowledge_state` 等类别。
+- `TemporaryMemoryStore`：保存低置信但可能重复出现的观察，不进入决策 prompt，等待更多证据。
+- `StrategyRAG`：从策略文档和扑克 heuristic 中检索本地 strategy chunks。
+- `MemoryConsolidator`：把 hand history、decision trace 和 coach review 转换成候选长期记忆和训练计划。
+- `PokerMemoryManager`：分别构建决策上下文和 Coach 上下文。
+- `MemoryManagerAgent`：在完成 session 和 self-play 实验后后台运行，检索已有记忆，合并重复发现，晋升多次命中的临时记忆，拒绝长期未命中的临时记忆，并归档缺少新证据支持的旧漏洞。
 
-Decision prompts use style constraints, short-term hand memory, and StrategyRAG. They do not read long-term user profile memory by default, because user leaks and learning goals should not become poker-action instructions. Coach prompts can read accepted long-term memories to generate personalized learning feedback. Low-confidence findings are stored as `temporary`; repeated evidence can promote them to `candidate` or `accepted`, while rejected or stale findings are kept out of future prompts.
+决策 prompt 使用风格约束、短期手牌记忆和 StrategyRAG，默认不读取长期用户画像，因为用户漏洞和学习目标不应变成打牌指令。Coach prompt 可以读取 accepted 长期记忆，用于生成个性化学习反馈。低置信发现会进入 `temporary`，多次命中后再晋升为 `candidate` 或 `accepted`；被拒绝或长期未命中的发现不会进入后续 prompt。
 
-All memory and strategy context is wrapped in XML-style fences such as `<style-profile-context>`, `<short-term-hand-context>`, `<user-memory-context>`, and `<strategy-context>` and explicitly marked as recalled context, not user instructions.
+所有记忆和策略上下文都会用 XML-style fence 包裹，例如 `<style-profile-context>`、`<short-term-hand-context>`、`<user-memory-context>` 和 `<strategy-context>`，并明确标注为“召回上下文，不是用户指令”。
 
-Memory governance APIs:
+记忆治理 API：
 
 ```text
 GET  /memory/profile
@@ -299,7 +299,7 @@ GET  /sessions/{session_id}/memory-agent/report
 
 ## StrategyRAG
 
-StrategyRAG intentionally uses explainable keyword and tag retrieval instead of vectors. Poker strategy queries are often structured around exact terms such as street, position, hand class, SPR, action pattern, and style. The retriever scores chunks with weighted signals:
+StrategyRAG 有意采用可解释的关键词和标签检索，而不是向量检索。扑克策略检索通常围绕精确结构化术语：街道、位置、手牌类别、SPR、行动模式和风格。检索器会用以下信号加权：
 
 - street
 - style
@@ -311,7 +311,7 @@ StrategyRAG intentionally uses explainable keyword and tag retrieval instead of 
 - keyword terms
 - chunk priority
 
-Each returned chunk includes:
+每条返回结果包含：
 
 - `id`
 - `source`
@@ -321,66 +321,66 @@ Each returned chunk includes:
 - `score_breakdown`
 - `reason`
 
-This makes retrieval behavior easy to inspect in traces, APIs, tests, and training reviews.
+这样在 trace、API、测试和训练复盘中都能解释“为什么召回这条策略”。
 
-## Evaluation
+## 评测体系
 
-PokerAgentLab includes a first-pass evaluation framework:
+PokerAgentLab 已包含第一版评测框架。
 
-### RAG Evaluation
+### RAG 评测
 
-Dataset:
+数据集：
 
 ```text
 evaluation/datasets/strategy_queries.jsonl
 ```
 
-Metrics:
+指标：
 
 - Hit@1
 - Hit@3
 - Precision@K
 - Recall@K
 - MRR
-- average retrieval latency
+- 平均检索延迟
 
-Reports:
+报告：
 
 ```text
 data/evaluation/rag_eval_{run_id}.json
 data/evaluation/rag_eval_{run_id}.md
 ```
 
-### System Evaluation
+### 系统评测
 
-The system benchmark runs repeatable self-play variants:
+系统 benchmark 会运行可重复的 self-play variants：
 
 - `baseline`
 - `rag`
 - `memory`
 
-Metrics include:
+指标包括：
 
 - self-play summary metrics
-- memory governance summary from the post-experiment `MemoryManagerAgent`
+- self-play 后 MemoryManagerAgent 生成的记忆治理摘要
 - trace coverage
 - strategy trace coverage
 - memory trace coverage
 - fallback count
-- whether coach training plans are generated
+- Coach 是否生成训练计划
 
-Reports:
+报告：
 
 ```text
 data/evaluation/system_eval_{run_id}.json
 data/evaluation/system_eval_{run_id}.md
 ```
 
-Current limitation: style-agent self-play does not yet consume RAG/Memory context in its action policy. Therefore, system evaluation currently measures context availability and observability coverage, not proven human learning improvement. This is intentional and stated explicitly in reports.
+当前限制：style-agent self-play 还没有把 RAG/Memory 上下文纳入行动策略。因此系统评测目前衡量的是上下文可用性和可观测性覆盖，不声称已经证明真实用户训练效果提升。这个限制会在报告中明确说明。
 
-## Runtime Data
+## 运行期数据
 
-Generated runtime data is stored locally:
+运行期数据默认保存在本地：
 
 ```text
 data/history/hand_history_{session_id}.jsonl
@@ -396,53 +396,53 @@ data/evaluation/*_eval_{run_id}.json
 data/evaluation/*_eval_{run_id}.md
 ```
 
-These files are ignored by git by default.
+这些文件默认被 git 忽略。
 
-## Testing
+## 测试
 
-Backend:
+后端：
 
 ```powershell
 python -m pytest -q
 ```
 
-Frontend:
+前端：
 
 ```powershell
 cd frontend
 npm run build
 ```
 
-Current coverage includes:
+当前测试覆盖：
 
-- non-interactive sessions
-- API session lifecycle
-- action submission
-- hand history and decision trace persistence
-- LLM action parsing and fallback
-- memory profile candidate accept/reject/search
-- temporary memory promotion/rejection
-- background MemoryManagerAgent governance
-- StrategyRAG explainable retrieval
-- memory consolidation guardrails
-- self-play report generation
-- self-play memory-agent hook
+- 非交互 session
+- API session 生命周期
+- 动作提交
+- hand history 和 decision trace 持久化
+- LLM action parser 和 fallback
+- 长期记忆 candidate accept/reject/search
+- 临时记忆 promote/reject
+- 后台 MemoryManagerAgent 记忆治理
+- StrategyRAG 可解释检索
+- MemoryConsolidator 防止错误沉淀长期记忆
+- self-play 报告生成
+- self-play 结束后自动触发记忆治理
 - RAG evaluation metrics
 - system evaluation reports
 
 ## Roadmap
 
-- Add a frontend switch for LLM coach feedback and decision-context debugging.
-- Add a frontend Evaluation Center for RAG and system benchmark visualization.
-- Expand the labeled RAG dataset beyond the initial smoke benchmark.
-- Add more poker-specific postflop board texture tags.
-- Add CI for backend tests and frontend build.
-- Add demo screenshots or GIFs after the UI stabilizes.
+- 增加前端开关，用于控制 LLM Coach 反馈和决策上下文调试。
+- 增加前端“评测中心”，展示 RAG 和系统 benchmark。
+- 扩充人工标注 RAG 数据集。
+- 增加更多扑克翻后牌面 texture 标签。
+- 增加 CI，自动运行后端测试和前端构建。
+- UI 稳定后补充 demo 截图或 GIF。
 
 ## License
 
-No license has been selected yet. Add a license before publishing if you want others to use, modify, or redistribute the project.
+当前还没有选择开源许可证。正式发布前建议添加 license，否则外部用户默认没有明确的使用、修改和分发授权。
 
 ## Contributors
 
-- [King-zege](https://github.com/King-zege) - project creator and maintainer
+- [King-zege](https://github.com/King-zege) - 项目作者与维护者
